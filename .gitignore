@@ -18,5 +18,9 @@ stderr*.txt
 # External dependencies
 C-Simple-JSON-Parser/
 
+# Zig build output
+zig-out/
+.zig-cache/
+
 # OS files
 nul
