@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build compiler
+        shell: bash
+        run: |
+          cc -std=c99 -O2 -D_CRT_SECURE_NO_WARNINGS -o c99js \
+            src/util.c src/type.c src/lexer.c src/ast.c src/symtab.c \
+            src/preprocess.c src/parser.c src/sema.c src/codegen.c src/main.c
+
+      - name: Run primitive tests
+        shell: bash
+        run: |
+          chmod +x test/run_tests.sh
+          if [ -f c99js.exe ]; then
+            bash test/run_tests.sh ./c99js.exe node
+          else
+            bash test/run_tests.sh ./c99js node
+          fi
+
+  self-compile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Self-compilation test
+        shell: bash
+        run: |
+          chmod +x test/run_tests.sh test/test_selfcompile.sh
+          bash test/test_selfcompile.sh node
