@@ -1,0 +1,22 @@
+# Build output
+*.exe
+*.pdb
+*.obj
+obj/
+
+# Generated JS (compiler output)
+*.js
+!runtime/runtime.js
+
+# Debug/log files
+*.txt
+debug*.txt
+error*.txt
+stdout*.txt
+stderr*.txt
+
+# External dependencies
+C-Simple-JSON-Parser/
+
+# OS files
+nul
