@@ -1,0 +1,30 @@
+=== Test 1: Simple Object ===
+{
+  "name": "Alice",
+  "active": true,
+  "age": 30
+}
+=== Test 2: Nested Object ===
+{
+  "person": {
+    "age": 25,
+    "name": "Bob"
+  },
+  "valid": true
+}
+=== Test 3: Array ===
+[
+  1,
+  2,
+  3,
+  4,
+  5
+]
+=== Test 4: String ===
+"hello world"
+=== Test 5: Float and Boolean ===
+{
+  "flag": false,
+  "pi": 3.140000
+}
+All tests passed!

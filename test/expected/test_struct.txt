@@ -1,0 +1,7 @@
+Point: (10, 20)
+Rect area = 5000
+Point via ptr: (30, 20)
+points[0] = (0, 0)
+points[1] = (10, 20)
+points[2] = (20, 40)
+Person: Alice, age 30

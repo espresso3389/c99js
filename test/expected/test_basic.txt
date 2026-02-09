@@ -1,0 +1,15 @@
+add(10, 20) = 30
+i = 0
+i = 1
+i = 2
+i = 3
+i = 4
+factorial(10) = 3628800
+a = 42, *p = 42
+after *p = 100: a = 100
+sum of array = 15
+count = 0
+count = 1
+count = 2
+two
+max(10, 20) = 20

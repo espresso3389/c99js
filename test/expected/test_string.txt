@@ -1,0 +1,9 @@
+strlen("Hello") = 5
+strcmp("Hello", "World") = -1
+After strcat: "Hello World"
+Dynamic: "Dynamic string", len=14
+strncpy: "abcde"
+memset: "AAAAAAAA"
+memcpy: "AAAAAAAA"
+strchr 'W' = 1
+strstr "World" = 1
