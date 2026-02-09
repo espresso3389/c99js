@@ -5,6 +5,14 @@
 #include <ctype.h>
 #include <time.h>
 
+/* Portable strdup (not available in strict C99) */
+static char *pp_strdup(const char *s) {
+    size_t len = strlen(s) + 1;
+    char *p = malloc(len);
+    if (p) memcpy(p, s, len);
+    return p;
+}
+
 /* ---- Macro definition ---- */
 typedef struct MacroParam {
     const char *name;
@@ -54,8 +62,8 @@ static void define_macro(const char *name, const char *body, bool is_func,
         }
     }
     Macro *m = calloc(1, sizeof(Macro));
-    m->name = strdup(name);
-    m->body = body ? strdup(body) : "";
+    m->name = pp_strdup(name);
+    m->body = body ? pp_strdup(body) : "";
     m->is_func = is_func;
     m->params = params;
     m->is_variadic = is_variadic;
