@@ -308,6 +308,43 @@ static long long pp_eval_expr(const char *expr) {
     return lhs;
 }
 
+/* Replace defined(X) / defined X with 1 or 0 before macro expansion.
+ * Per C99 6.10.1, the defined operator must be processed before
+ * macro expansion to prevent the operand from being expanded. */
+static char *pp_replace_defined(const char *expr) {
+    Buf out;
+    buf_init(&out);
+    const char *p = expr;
+    while (*p) {
+        if (strncmp(p, "defined", 7) == 0 &&
+            !isalnum((unsigned char)p[7]) && p[7] != '_') {
+            const char *start = p;
+            p += 7;
+            while (*p == ' ' || *p == '\t') p++;
+            bool paren = false;
+            if (*p == '(') { paren = true; p++; }
+            while (*p == ' ' || *p == '\t') p++;
+            const char *nstart = p;
+            while (isalnum((unsigned char)*p) || *p == '_') p++;
+            size_t len = (size_t)(p - nstart);
+            char name[256];
+            if (len >= sizeof(name)) len = sizeof(name) - 1;
+            memcpy(name, nstart, len);
+            name[len] = '\0';
+            if (paren) {
+                while (*p == ' ' || *p == '\t') p++;
+                if (*p == ')') p++;
+            }
+            buf_push(&out, find_macro(name) ? '1' : '0');
+        } else {
+            buf_push(&out, *p);
+            p++;
+        }
+    }
+    buf_push(&out, '\0');
+    return out.data;
+}
+
 /* Macro expansion with rescanning */
 static void expand_macros_r(const char *input, Buf *out, const char *filename, int line, int depth);
 
@@ -678,10 +715,12 @@ char *preprocess(const char *src, const char *filename,
                     pp_skip_line(&pp);
                 } else {
                     const char *expr = pp_read_line(&pp);
-                    /* Expand macros in expression first */
+                    /* Process defined() before macro expansion (C99 6.10.1) */
+                    char *dexpr = pp_replace_defined(expr);
                     Buf expanded;
                     buf_init(&expanded);
-                    expand_macros(expr, &expanded, pp.filename, pp.line);
+                    expand_macros(dexpr, &expanded, pp.filename, pp.line);
+                    free(dexpr);
                     char *estr = buf_detach(&expanded);
                     long long val = pp_eval_expr(estr);
                     free(estr);
@@ -710,9 +749,11 @@ char *preprocess(const char *src, const char *filename,
             } else if (strcmp(dir, "elif") == 0) {
                 if (pp.skip_depth == 1) {
                     const char *expr = pp_read_line(&pp);
+                    char *dexpr = pp_replace_defined(expr);
                     Buf expanded;
                     buf_init(&expanded);
-                    expand_macros(expr, &expanded, pp.filename, pp.line);
+                    expand_macros(dexpr, &expanded, pp.filename, pp.line);
+                    free(dexpr);
                     char *estr = buf_detach(&expanded);
                     long long val = pp_eval_expr(estr);
                     free(estr);

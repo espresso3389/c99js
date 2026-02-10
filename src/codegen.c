@@ -1081,10 +1081,10 @@ void codegen_generate(CodeGen *cg, Node *program) {
      * heap allocations (allocString etc.) don't overlap globals. */
     emit(cg, "// === Data ===\n");
     emit(cg, "rt.mem.reserveGlobals(%d);\n", global_offset);
-    if (cg->data_section.len > 0) {
-        buf_push(&cg->data_section, '\0');
-        emit(cg, "%s", cg->data_section.data);
-    }
+
+    /* Emit functions first, then register function pointers BEFORE
+     * global data initializers, because global data may reference
+     * function pointer constants (__fp_xxx). */
     emit(cg, "\n// === Functions ===\n");
     if (func_buf.len > 0) {
         buf_push(&func_buf, '\0');
@@ -1105,6 +1105,13 @@ void codegen_generate(CodeGen *cg, Node *program) {
         }
     }
     if (has_fp) emit(cg, "\n");
+
+    /* Emit global data initializers (may reference __fp_xxx) */
+    emit(cg, "// === Global Data ===\n");
+    if (cg->data_section.len > 0) {
+        buf_push(&cg->data_section, '\0');
+        emit(cg, "%s", cg->data_section.data);
+    }
 
     /* Check if main takes argc/argv */
     bool main_has_args = false;
