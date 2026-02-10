@@ -2,6 +2,7 @@
 *.exe
 *.pdb
 *.obj
+*.ilk
 obj/
 c99js
 
@@ -13,6 +14,12 @@ c99js
 *.txt
 !test/expected/*.txt
 !challenges/tests/**/expected.txt
+
+# Test data files
+*.ini
+
+# Work-in-progress challenge workspace
+challenges_wip/
 
 # Zig build output
 zig-out/
