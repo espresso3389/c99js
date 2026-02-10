@@ -99,7 +99,7 @@ typedef struct {
     Arena *arena;
     int if_depth;
     int skip_depth;  /* > 0 means skipping */
-    uint64_t if_has_matched;  /* bitmask: bit N set = branch matched at depth N */
+    unsigned int if_has_matched;  /* bitmask: bit N set = branch matched at depth N */
     bool in_block_comment; /* persistent across lines */
 } PPState;
 
@@ -713,7 +713,7 @@ char *preprocess(const char *src, const char *filename,
 
             if (strcmp(dir, "if") == 0) {
                 pp.if_depth++;
-                pp.if_has_matched &= ~(1ULL << pp.if_depth);
+                pp.if_has_matched &= ~(1U << pp.if_depth);
                 if (pp.skip_depth > 0) {
                     pp.skip_depth++;
                     pp_skip_line(&pp);
@@ -729,11 +729,11 @@ char *preprocess(const char *src, const char *filename,
                     long long val = pp_eval_expr(estr);
                     free(estr);
                     if (!val) pp.skip_depth = 1;
-                    else pp.if_has_matched |= (1ULL << pp.if_depth);
+                    else pp.if_has_matched |= (1U << pp.if_depth);
                 }
             } else if (strcmp(dir, "ifdef") == 0) {
                 pp.if_depth++;
-                pp.if_has_matched &= ~(1ULL << pp.if_depth);
+                pp.if_has_matched &= ~(1U << pp.if_depth);
                 pp_skip_whitespace_inline(&pp);
                 const char *name = pp_read_ident(&pp);
                 pp_skip_line(&pp);
@@ -742,11 +742,11 @@ char *preprocess(const char *src, const char *filename,
                 } else if (!name || !find_macro(name)) {
                     pp.skip_depth = 1;
                 } else {
-                    pp.if_has_matched |= (1ULL << pp.if_depth);
+                    pp.if_has_matched |= (1U << pp.if_depth);
                 }
             } else if (strcmp(dir, "ifndef") == 0) {
                 pp.if_depth++;
-                pp.if_has_matched &= ~(1ULL << pp.if_depth);
+                pp.if_has_matched &= ~(1U << pp.if_depth);
                 pp_skip_whitespace_inline(&pp);
                 const char *name = pp_read_ident(&pp);
                 pp_skip_line(&pp);
@@ -755,10 +755,10 @@ char *preprocess(const char *src, const char *filename,
                 } else if (name && find_macro(name)) {
                     pp.skip_depth = 1;
                 } else {
-                    pp.if_has_matched |= (1ULL << pp.if_depth);
+                    pp.if_has_matched |= (1U << pp.if_depth);
                 }
             } else if (strcmp(dir, "elif") == 0) {
-                if (pp.skip_depth == 1 && !(pp.if_has_matched & (1ULL << pp.if_depth))) {
+                if (pp.skip_depth == 1 && !(pp.if_has_matched & (1U << pp.if_depth))) {
                     /* No branch matched yet — evaluate condition */
                     const char *expr = pp_read_line(&pp);
                     char *dexpr = pp_replace_defined(expr);
@@ -771,19 +771,19 @@ char *preprocess(const char *src, const char *filename,
                     free(estr);
                     if (val) {
                         pp.skip_depth = 0;
-                        pp.if_has_matched |= (1ULL << pp.if_depth);
+                        pp.if_has_matched |= (1U << pp.if_depth);
                     }
                 } else if (pp.skip_depth == 0) {
                     /* Current branch was active — skip remaining */
                     pp.skip_depth = 1;
-                    pp.if_has_matched |= (1ULL << pp.if_depth);
+                    pp.if_has_matched |= (1U << pp.if_depth);
                     pp_skip_line(&pp);
                 } else {
                     pp_skip_line(&pp);
                 }
             } else if (strcmp(dir, "else") == 0) {
                 pp_skip_line(&pp);
-                if (pp.skip_depth == 1 && !(pp.if_has_matched & (1ULL << pp.if_depth)))
+                if (pp.skip_depth == 1 && !(pp.if_has_matched & (1U << pp.if_depth)))
                     pp.skip_depth = 0;
                 else if (pp.skip_depth == 0)
                     pp.skip_depth = 1;
