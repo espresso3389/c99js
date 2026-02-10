@@ -542,7 +542,16 @@ static void gen_expr(CodeGen *cg, Node *n) {
         case ND_ADD: op = "+"; break;  case ND_SUB: op = "-"; break;
         case ND_MUL: op = "*"; break;  case ND_DIV: op = "/"; break;
         case ND_MOD: op = "%"; break;
-        case ND_LSHIFT: op = "<<"; break; case ND_RSHIFT: op = ">>"; break;
+        case ND_LSHIFT: op = "<<"; break;
+        case ND_RSHIFT:
+            /* Unsigned types need logical right shift (>>>) in JavaScript;
+             * signed types need arithmetic right shift (>>).
+             * BigInt (u64) does not support >>>, but >> on BigInt is always
+             * arithmetic; for unsigned BigInt values this is fine since they
+             * are non-negative. */
+            op = (n->lhs->type && n->lhs->type->is_unsigned &&
+                  !type_is_u64(n->lhs->type)) ? ">>>" : ">>";
+            break;
         case ND_LT: op = "<"; break;   case ND_LE: op = "<="; break;
         case ND_GT: op = ">"; break;   case ND_GE: op = ">="; break;
         case ND_EQ: op = "==="; break; case ND_NE: op = "!=="; break;
@@ -638,8 +647,21 @@ static void gen_expr(CodeGen *cg, Node *n) {
             emit(cg, "(("); gen_expr(cg, n->lhs); emit(cg, " %s ", op);
             gen_expr(cg, n->rhs); emit(cg, ") ? 1 : 0)");
         } else {
-            emit(cg, "("); gen_expr(cg, n->lhs); emit(cg, " %s ", op);
-            gen_expr(cg, n->rhs); emit(cg, ")");
+            /* For unsigned 32-bit arithmetic (+, -, *), wrap with >>> 0
+             * to keep values in uint32 range.  JavaScript bitwise operators
+             * already coerce to 32-bit, so only arithmetic ops need this. */
+            bool need_u32_wrap = false;
+            if (n->type && n->type->is_unsigned && !type_is_u64(n->type) &&
+                (n->kind == ND_ADD || n->kind == ND_SUB || n->kind == ND_MUL)) {
+                need_u32_wrap = true;
+            }
+            if (need_u32_wrap) {
+                emit(cg, "(("); gen_expr(cg, n->lhs); emit(cg, " %s ", op);
+                gen_expr(cg, n->rhs); emit(cg, ") >>> 0)");
+            } else {
+                emit(cg, "("); gen_expr(cg, n->lhs); emit(cg, " %s ", op);
+                gen_expr(cg, n->rhs); emit(cg, ")");
+            }
         }
         break;
     }
@@ -719,7 +741,11 @@ static void gen_expr(CodeGen *cg, Node *n) {
         case ND_ADD_ASSIGN: op = "+"; break; case ND_SUB_ASSIGN: op = "-"; break;
         case ND_MUL_ASSIGN: op = "*"; break; case ND_DIV_ASSIGN: op = "/"; break;
         case ND_MOD_ASSIGN: op = "%"; break;
-        case ND_LSHIFT_ASSIGN: op = "<<"; break; case ND_RSHIFT_ASSIGN: op = ">>"; break;
+        case ND_LSHIFT_ASSIGN: op = "<<"; break;
+        case ND_RSHIFT_ASSIGN:
+            op = (n->lhs->type && n->lhs->type->is_unsigned &&
+                  !type_is_u64(n->lhs->type)) ? ">>>" : ">>";
+            break;
         case ND_AND_ASSIGN: op = "&"; break; case ND_OR_ASSIGN: op = "|"; break;
         case ND_XOR_ASSIGN: op = "^"; break;
         default: op = "+"; break;
@@ -732,11 +758,25 @@ static void gen_expr(CodeGen *cg, Node *n) {
             gen_f64_val(cg, n->rhs);
             emit(cg, "); rt.mem.writeBigUint64(a, v); return v; })())");
         } else {
+            /* For unsigned 32-bit compound arithmetic (+=, -=, *=),
+             * mask the result with >>> 0 to stay in uint32 range. */
+            bool need_u32_wrap = false;
+            if (lt && lt->is_unsigned && !type_is_u64(lt) &&
+                (n->kind == ND_ADD_ASSIGN || n->kind == ND_SUB_ASSIGN ||
+                 n->kind == ND_MUL_ASSIGN)) {
+                need_u32_wrap = true;
+            }
             emit(cg, "((function(){ var a = ");
             gen_addr(cg, n->lhs);
-            emit(cg, "; var v = rt.mem.%s(a) %s (", js_getter(lt), op);
-            gen_expr(cg, n->rhs);
-            emit(cg, "); rt.mem.%s(a, v); return v; })())", js_setter(lt));
+            if (need_u32_wrap) {
+                emit(cg, "; var v = (rt.mem.%s(a) %s (", js_getter(lt), op);
+                gen_expr(cg, n->rhs);
+                emit(cg, ")) >>> 0; rt.mem.%s(a, v); return v; })())", js_setter(lt));
+            } else {
+                emit(cg, "; var v = rt.mem.%s(a) %s (", js_getter(lt), op);
+                gen_expr(cg, n->rhs);
+                emit(cg, "); rt.mem.%s(a, v); return v; })())", js_setter(lt));
+            }
         }
         break;
     }

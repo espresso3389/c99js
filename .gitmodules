@@ -1,0 +1,54 @@
+[submodule "challenges/tiny-AES-c"]
+	path = challenges/tiny-AES-c
+	url = https://github.com/kokke/tiny-AES-c.git
+[submodule "challenges/teeny-sha1"]
+	path = challenges/teeny-sha1
+	url = https://github.com/CTrabant/teeny-sha1.git
+[submodule "challenges/tiny-regex-c"]
+	path = challenges/tiny-regex-c
+	url = https://github.com/kokke/tiny-regex-c.git
+[submodule "challenges/tinylisp"]
+	path = challenges/tinylisp
+	url = https://github.com/Robert-van-Engelen/tinylisp.git
+[submodule "challenges/tinyexpr"]
+	path = challenges/tinyexpr
+	url = https://github.com/codeplea/tinyexpr.git
+[submodule "challenges/ini"]
+	path = challenges/ini
+	url = https://github.com/rxi/ini.git
+[submodule "challenges/c4"]
+	path = challenges/c4
+	url = https://github.com/rswier/c4.git
+[submodule "challenges/lisp"]
+	path = challenges/lisp
+	url = https://github.com/Robert-van-Engelen/lisp.git
+[submodule "challenges/brainfuck-c"]
+	path = challenges/brainfuck-c
+	url = https://github.com/kgabis/brainfuck-c.git
+[submodule "challenges/ht"]
+	path = challenges/ht
+	url = https://github.com/benhoyt/ht.git
+[submodule "challenges/tiny-bignum-c"]
+	path = challenges/tiny-bignum-c
+	url = https://github.com/kokke/tiny-bignum-c.git
+[submodule "challenges/jsmn"]
+	path = challenges/jsmn
+	url = https://github.com/zserge/jsmn.git
+[submodule "challenges/md5-c"]
+	path = challenges/md5-c
+	url = https://github.com/Zunawe/md5-c.git
+[submodule "challenges/b64"]
+	path = challenges/b64
+	url = https://github.com/jwerle/b64.c.git
+[submodule "challenges/FastLZ"]
+	path = challenges/FastLZ
+	url = https://github.com/ariya/FastLZ.git
+[submodule "challenges/cJSON"]
+	path = challenges/cJSON
+	url = https://github.com/DaveGamble/cJSON.git
+[submodule "challenges/btree"]
+	path = challenges/btree
+	url = https://github.com/tidwall/btree.c.git
+[submodule "challenges/printf"]
+	path = challenges/printf
+	url = https://github.com/mpaland/printf.git

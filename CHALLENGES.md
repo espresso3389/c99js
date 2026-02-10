@@ -1,24 +1,65 @@
-# c99js Showcases & Challenges
+# c99js Build Challenges
 
 Real-world C projects compiled to JavaScript with c99js.
 
-## Showcases
+| # | Project | Lines | Status | Notes |
+|---|---------|-------|--------|-------|
+| 1 | c99js (self) | ~5,500 | **PASS** | Self-compilation, byte-identical output |
+| 2 | [antirez/voxtral.c](https://github.com/antirez/voxtral.c) | ~5,000 | **PASS** | ML inference (speech-to-text), POSIX compat layer |
+| 3 | [kokke/tiny-AES-c](https://github.com/kokke/tiny-AES-c) | ~570 | **PASS** | AES-128 ECB/CBC/CTR all correct |
+| 4 | [CTrabant/teeny-sha1](https://github.com/CTrabant/teeny-sha1) | ~160 | **PASS** | All 4 SHA-1 vectors correct |
+| 5 | [kokke/tiny-regex-c](https://github.com/kokke/tiny-regex-c) | ~520 | **PASS** | 26/26 regex tests passed |
+| 6 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **PASS** | GC version: arithmetic, lambda, recursion, fib(10), closures, let* |
+| 7 | [codeplea/tinyexpr](https://github.com/codeplea/tinyexpr) | ~600 | **PASS** | All 8 math expression tests passed |
+| 8 | [rxi/ini](https://github.com/rxi/ini) | ~200 | **PASS** | INI parse/read all tests passed |
+| 9 | [rswier/c4](https://github.com/rswier/c4) | ~365 | **PASS** | C interpreter VM compiles and runs hello.c correctly |
+| 10 | [Robert-van-Engelen/lisp](https://github.com/Robert-van-Engelen/lisp) | ~730 | **PASS** | Full interpreter works: NaN-boxing, setjmp/longjmp, lambda, define, cond |
+| 11 | [kgabis/brainfuck-c](https://github.com/kgabis/brainfuck-c) | ~130 | **PASS** | Brainfuck interpreter, no modifications needed |
+| 12 | [benhoyt/ht](https://github.com/benhoyt/ht) | ~250 | **PASS** | 71/71 hash table tests passed |
+| 13 | [kokke/tiny-bignum-c](https://github.com/kokke/tiny-bignum-c) | ~790 | **PASS** | factorial(100) verified, WORD_SIZE=1 |
+| 14 | [zserge/jsmn](https://github.com/zserge/jsmn) | ~470 | **PASS** | JSON parser, goto→flag refactoring |
+| 15 | [Zunawe/md5-c](https://github.com/Zunawe/md5-c) | ~270 | **PASS** | 3 RFC test vectors, found 2 compiler bugs |
+| 16 | [jwerle/b64.c](https://github.com/jwerle/b64.c) | ~330 | **PASS** | 22/22 base64 encode/decode/roundtrip tests |
+| 17 | [ariya/FastLZ](https://github.com/ariya/FastLZ) | ~1,100 | **PASS** | 10/10 compression roundtrip tests |
+| 18 | [DaveGamble/cJSON](https://github.com/DaveGamble/cJSON) | ~5,100 | **PASS** | 66/66 JSON library tests, extensive goto refactoring |
+| 19 | [tidwall/btree.c](https://github.com/tidwall/btree.c) | ~1,570 | **PASS** | 153/153 B-tree tests, major structural refactoring |
+| 20 | [mpaland/printf](https://github.com/mpaland/printf) | ~1,690 | **PASS** | 27/27 printf formatting tests, va_arg workaround |
 
-Large-scale projects that demonstrate c99js capabilities.
+**Score: 20/20 passing (compile+run)**
 
-| Project | Lines | Domain | Status |
-|---------|-------|--------|--------|
-| [antirez/voxtral.c](https://github.com/antirez/voxtral.c) | ~5,000 | ML inference (speech-to-text) | Compiles and runs |
-| c99js (self) | ~5,500 | Compiler | Compiles and self-verifies |
+### 1. c99js -- Self-Compilation (Bootstrapping)
 
-### voxtral.c -- Mistral AI Speech-to-Text Engine
+The most significant test of c99js is compiling itself. The resulting
+JavaScript compiler produces byte-identical output to the native compiler,
+proving full correctness.
+
+```
+# Step 1: Build native compiler
+clang -std=c99 -O2 -o c99js src/*.c
+
+# Step 2: Native compiler -> JS compiler
+./c99js selfcompile.c -o selfcompile.js
+
+# Step 3: JS compiler compiles itself
+node selfcompile.js selfcompile.c -o selfcompile2.js
+
+# Step 4: Verify byte-identical output
+diff selfcompile.js selfcompile2.js   # no output
+```
+
+C features exercised: recursive descent parser with a full AST, arena
+allocator, hash tables, variadic functions (`va_start`/`va_arg`/`va_end`),
+function pointers, preprocessor with macro expansion/`#if`
+evaluation/stringification/token pasting, file I/O, `qsort`.
+
+### 2. voxtral.c -- PASS
 
 **Author:** Salvatore Sanfilippo (creator of Redis)
 
 voxtral.c is a pure C implementation of the Mistral AI Voxtral Realtime 4B
-speech-to-text model. It implements a full neural network inference pipeline:
-WAV input, mel spectrogram computation, convolutional encoder, transformer
-decoder with KV cache, and BPE tokenizer -- all in C99.
+speech-to-text model (~5,000 lines). It implements a full neural network
+inference pipeline: WAV input, mel spectrogram computation, convolutional
+encoder, transformer decoder with KV cache, and BPE tokenizer -- all in C99.
 
 The entire project compiles to a single JavaScript file and runs under
 Node.js or Bun. The compiled program parses command-line arguments, prints
@@ -48,49 +89,7 @@ to float conversion via `memcpy` bit manipulation, extensive `float` math,
 `snprintf`/`fprintf`/`perror`/`fflush`, signal handling, variadic argument
 parsing, large-scale matrix operations, ring buffers and state machines.
 
-### c99js -- Self-Compilation (Bootstrapping)
-
-The most significant test of c99js is compiling itself. The resulting
-JavaScript compiler produces byte-identical output to the native compiler,
-proving full correctness.
-
-```
-# Step 1: Build native compiler
-clang -std=c99 -O2 -o c99js src/*.c
-
-# Step 2: Native compiler -> JS compiler
-./c99js selfcompile.c -o selfcompile.js
-
-# Step 3: JS compiler compiles itself
-node selfcompile.js selfcompile.c -o selfcompile2.js
-
-# Step 4: Verify byte-identical output
-diff selfcompile.js selfcompile2.js   # no output
-```
-
-C features exercised: recursive descent parser with a full AST, arena
-allocator, hash tables, variadic functions (`va_start`/`va_arg`/`va_end`),
-function pointers, preprocessor with macro expansion/`#if`
-evaluation/stringification/token pasting, file I/O, `qsort`.
-
-## Build Challenges
-
-Pure C projects from GitHub, tested against the c99js compiler.
-
-| # | Project | Lines | Status | Notes |
-|---|---------|-------|--------|-------|
-| 1 | [kokke/tiny-AES-c](https://github.com/kokke/tiny-AES-c) | ~570 | **PASS** | AES-128 ECB/CBC/CTR all correct |
-| 2 | [CTrabant/teeny-sha1](https://github.com/CTrabant/teeny-sha1) | ~160 | **PASS** | All 4 SHA-1 vectors correct |
-| 3 | [kokke/tiny-regex-c](https://github.com/kokke/tiny-regex-c) | ~520 | **PASS** | 26/26 regex tests passed |
-| 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **PASS** | GC version: arithmetic, lambda, recursion, fib(10), closures, let* |
-| 5 | [codeplea/tinyexpr](https://github.com/codeplea/tinyexpr) | ~600 | **PASS** | All 8 math expression tests passed |
-| 6 | [rxi/ini](https://github.com/rxi/ini) | ~200 | **PASS** | INI parse/read all tests passed |
-| 7 | [rswier/c4](https://github.com/rswier/c4) | ~365 | **PASS** | C interpreter VM compiles and runs hello.c correctly |
-| 8 | [Robert-van-Engelen/lisp](https://github.com/Robert-van-Engelen/lisp) | ~730 | **PASS** | Full interpreter works: NaN-boxing, setjmp/longjmp, lambda, define, cond |
-
-**Score: 8/8 passing (compile+run)**
-
-### 1. tiny-AES-c -- PASS
+### 3. tiny-AES-c -- PASS
 
 AES-128 encryption/decryption compiles and all test vectors pass:
 
@@ -104,7 +103,7 @@ CTR xcrypt:  SUCCESS!
 Previously blocked by `#if defined(ECB)` preprocessor expressions.
 Fixed by processing `defined()` operator before macro expansion (C99 6.10.1).
 
-### 2. teeny-sha1 -- PASS
+### 4. teeny-sha1 -- PASS
 
 Compiled and ran with workarounds for uint64 bit-shifting (split into hi/lo 32-bit words)
 and rotate-left masking (JS `>>` is signed). All 4 standard SHA-1 test vectors pass:
@@ -116,7 +115,7 @@ Test 3: SHA-1 of long test vector   -- PASS
 Test 4: SHA-1 of "The quick brown fox jumps over the lazy dog" -- PASS
 ```
 
-### 3. tiny-regex-c -- PASS
+### 5. tiny-regex-c -- PASS
 
 Full regex engine compiles and passes all 26 test cases covering: literal patterns,
 digit/word/whitespace classes (`\d`, `\w`, `\s`), character classes `[a-z]`,
@@ -126,7 +125,7 @@ anchors `^`/`$`, quantifiers `+`/`?`/`*`, dot `.`, and combined patterns.
 === Results: 26/26 tests passed ===
 ```
 
-### 4. tinylisp -- PASS
+### 6. tinylisp -- PASS
 
 Full NaN-boxing Lisp interpreter with REPL. Uses `double` type punning via `unsigned long long`
 casts to encode tagged values (ATOM, PRIM, CONS, CLOS, NIL) in NaN payloads.
@@ -155,7 +154,7 @@ Required multiple compiler fixes to work:
 (fib 10) => 55
 ```
 
-### 5. tinyexpr -- PASS
+### 7. tinyexpr -- PASS
 
 Full math expression parser/evaluator compiles and produces correct results for all tests:
 
@@ -170,7 +169,7 @@ Test 7: te_interp("fac(5)") = 120
 Test 8: te_interp("pow(2,8)") = 256
 ```
 
-### 6. rxi/ini -- PASS
+### 8. rxi/ini -- PASS
 
 INI file parser compiles and all tests pass: writing a test INI file, parsing it back,
 and reading values by section/key. Null return for missing keys works correctly.
@@ -183,7 +182,7 @@ and reading values by section/key. Null return for missing keys works correctly.
 All tests passed!
 ```
 
-### 7. c4 -- PASS
+### 9. c4 -- PASS
 
 A C interpreter/VM written in C (~365 lines). Compiles C source code to bytecode and executes
 it on a virtual stack machine. Uses `#define int long long` to make all `int` types 64-bit.
@@ -202,7 +201,7 @@ hello, world
 exit(0) cycle = 9
 ```
 
-### 8. Robert-van-Engelen/lisp -- PASS
+### 10. Robert-van-Engelen/lisp -- PASS
 
 Full NaN-boxing Lisp interpreter (~730 lines) with `setjmp`/`longjmp` error handling.
 Required all of the tinylisp NaN-boxing fixes plus additional compiler work:
@@ -227,6 +226,148 @@ All 12 test expressions evaluate correctly:
 (cond (#t 99)) => 99
 ```
 
+### 11. brainfuck-c -- PASS
+
+Brainfuck interpreter (~130 lines). Compiles and runs with no source modifications needed.
+The interpreter reads a `.bf` program and executes it on a 30,000-cell tape.
+
+```
+$ c99js brainfuck.c -o out.js
+$ node out.js hw.bf
+Hello World!
+```
+
+### 12. benhoyt/ht -- PASS
+
+Open-addressing hash table with FNV-1a hashing and automatic resizing. All 71 tests
+pass covering create/destroy, set/get, key overwrite, missing key, iteration, and
+growth (50 insertions forcing multiple table expansions).
+
+```
+=== Results: 71 / 71 passed ===
+ALL TESTS PASSED
+```
+
+Workarounds: `strdup` shim (not in C99 standard).
+
+### 13. tiny-bignum-c -- PASS
+
+Arbitrary-precision integer arithmetic library. Computes factorial(100) and verifies
+the result against the known 158-digit hex value.
+
+Uses `WORD_SIZE=1` (`DTYPE=uint8_t`, `DTYPE_TMP=uint32_t`) to avoid 64-bit integer
+dependencies.
+
+```
+factorial(100) = 1b30964ec395dc24069528d54bbda40d16e966ef9...
+PASS: factorial(100) matches expected value!
+```
+
+### 14. jsmn -- PASS
+
+Minimalist JSON parser (~470 lines, header-only). Parses a JSON object with strings,
+numbers, booleans, and arrays, then verifies all 12 tokens (types, positions, sizes).
+
+Required refactoring `goto found` in `jsmn_parse_primitive` to a flag-based loop break,
+since c99js does not support `goto`.
+
+```
+Token count: 12
+PASS: All jsmn token verifications succeeded!
+```
+
+### 15. md5-c -- PASS
+
+MD5 hash implementation. All 3 RFC test vectors pass:
+
+```
+Input:    ""           => d41d8cd98f00b204e9800998ecf8427e  PASS
+Input:    "abc"        => 900150983cd24fb0d6963f7d28e17f72  PASS
+Input:    "Hello, World!" => 65a8e27d8879283831b664bd8b7f0ad4  PASS
+```
+
+**This challenge uncovered two compiler bugs**, both fixed in `src/codegen.c`:
+1. Unsigned 32-bit arithmetic (`+`, `-`, `*`) did not wrap with `>>> 0`, causing
+   overflow past 2^32 in JavaScript
+2. Right shift (`>>`) on unsigned types emitted arithmetic shift instead of logical
+   shift (`>>>`)
+
+### 16. b64.c -- PASS
+
+Base64 encode/decode library. All 22 tests pass: 10 encode tests (RFC 4648 vectors),
+7 decode tests, and 5 roundtrip encode→decode verifications.
+
+```
+=== Results: 22/22 passed, 0 failed ===
+ALL TESTS PASSED
+```
+
+### 17. FastLZ -- PASS
+
+Fast lossless compression library (~1,100 lines). All 10 roundtrip tests pass across
+both compression levels, covering repetitive text, English prose, sequential bytes,
+all-zero buffers, mixed patterns, and minimum-size input.
+
+```
+=== Results: 10/10 tests passed ===
+OVERALL: PASS
+```
+
+Workarounds: patched `2654435769LL` constant to `(uint32_t)2654435769u` to avoid
+BigInt/Number mixing in JavaScript.
+
+### 18. cJSON -- PASS
+
+Full-featured JSON library (~5,100 lines, the largest challenge). All 66 tests pass
+covering parse, create, print, roundtrip, escaped strings, type queries, version info,
+and invalid JSON handling.
+
+```
+=== Results: 66/66 passed ===
+ALL TESTS PASSED
+```
+
+Required extensive adaptations:
+- ~50 `goto` statements replaced with `do { ... } while(0)` and flag-based control flow
+  in `parse_number`, `parse_string`, `parse_array`, `parse_object`, and print functions
+- Function pointer wrappers for `malloc`/`free` (c99js can't take address of builtins)
+- Integer literal `25` passed to `double` parameter changed to `25.0`
+
+### 19. btree.c -- PASS
+
+B-tree data structure library (~1,570 lines). All 153 tests pass covering insert,
+search, replace, delete, min/max, ascending/descending iteration, pop, load (optimized
+sequential insert), bulk operations (1,000 items), and clear.
+
+```
+=== Results: 153/153 tests passed ===
+ALL TESTS PASSED
+```
+
+Required the most structural refactoring of any challenge:
+- 18 `goto` statements replaced with structured control flow
+- `BTREE_NOATOMICS` (no `stdatomic.h`)
+- No bitfields (replaced with plain `int`)
+- No flexible array members -- items and children stored via byte-offset calculations
+  from a single flat allocation
+- Function pointer wrappers for `malloc`/`free`
+
+### 20. mpaland/printf -- PASS
+
+Standalone `printf` implementation (~1,690 lines) with no libc dependency. All 27
+formatting tests pass covering `%s`, `%d`, `%x`, `%X`, `%o`, `%u`, `%c`, `%f`,
+width/precision/padding, alignment flags, multiple arguments, and truncation.
+
+```
+=== Results: 27/27 passed ===
+```
+
+Workarounds:
+- `va_arg` not supported -- replaced with explicit typed wrapper functions
+  (`snprintf_i`, `snprintf_s`, `snprintf_f`, etc.)
+- Float negation bug -- `neg_double()` helper avoids incorrect BigInt bit-pattern negation
+- Integer division semantics -- split compound divide-and-test to avoid JS float division
+
 ## Compiler Fixes Applied
 
 1. `defined()` in preprocessor -- process `defined(X)` before macro expansion per C99 6.10.1
@@ -248,3 +389,5 @@ All 12 test expressions evaluate correctly:
 17. Pointer + BigInt arithmetic -- wrap BigInt index with `Number()` in pointer add/subscript
 18. BigInt→pointer cast -- `Number(expr & 0xFFFFFFFFn)` when casting `long long` to pointer
 19. BigInt main return -- `process.exit(Number(main()))` handles BigInt return values
+20. Unsigned 32-bit wrap -- emit `>>> 0` after `+`, `-`, `*` on unsigned 32-bit types to prevent overflow past 2^32
+21. Unsigned right shift -- emit `>>>` instead of `>>` for unsigned non-BigInt types (C `>>` is logical for unsigned)

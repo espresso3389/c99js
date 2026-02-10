@@ -1,0 +1,12 @@
+(+ 1 2)
+(* 3 4)
+(if 1 2 3)
+(if () 10 20)
+(define x 42)
+x
+(define f (lambda (n) (* n n)))
+(f 7)
+(list 1 2 3)
+(quote hello)
+(begin 1 2 3)
+(cond (#t 99))
