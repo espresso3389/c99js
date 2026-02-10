@@ -9,13 +9,13 @@ Pure C projects from GitHub, tested against the c99js compiler.
 | 1 | [kokke/tiny-AES-c](https://github.com/kokke/tiny-AES-c) | ~570 | **PASS** | AES-128 ECB/CBC/CTR all correct |
 | 2 | [CTrabant/teeny-sha1](https://github.com/CTrabant/teeny-sha1) | ~160 | **PASS** | All 4 SHA-1 vectors correct |
 | 3 | [kokke/tiny-regex-c](https://github.com/kokke/tiny-regex-c) | ~520 | **PASS** | 26/26 regex tests passed |
-| 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **PASS** (compile+codegen) | Compiles and starts; needs `getchar()` in runtime for REPL |
+| 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **PASS** | Full REPL works: arithmetic, lambda, define, recursion, closures, let*, cond |
 | 5 | [codeplea/tinyexpr](https://github.com/codeplea/tinyexpr) | ~600 | **PASS** | All 8 math expression tests passed |
 | 6 | [rxi/ini](https://github.com/rxi/ini) | ~200 | **PASS** | INI parse/read all tests passed |
 | 7 | [rswier/c4](https://github.com/rswier/c4) | ~365 | not compilable | POSIX-only: unistd.h, fcntl.h, open/read/close, `#define int long long` |
 | 8 | [Robert-van-Engelen/lisp](https://github.com/Robert-van-Engelen/lisp) | ~730 | partial | Unit tests pass (NaN-boxing works); full interpreter needs setjmp/longjmp |
 
-**Score: 6/8 passing (compile+run), 1 partial, 1 code issue**
+**Score: 7/8 passing (compile+run), 1 code issue**
 
 ## Detailed Results
 
@@ -55,13 +55,29 @@ anchors `^`/`$`, quantifiers `+`/`?`/`*`, dot `.`, and combined patterns.
 === Results: 26/26 tests passed ===
 ```
 
-### 4. tinylisp -- PASS (compile+codegen fixed)
+### 4. tinylisp -- PASS
 
-Previously crashed with `ReferenceError: Cannot access '__fp_f_eval' before initialization`.
-Fixed by reordering codegen to emit function pointer registrations before global data initializers.
+Full NaN-boxing Lisp interpreter with REPL. Uses `double` type punning via `unsigned long long`
+casts to encode tagged values (ATOM, PRIM, CONS, CLOS, NIL) in NaN payloads.
 
-Now compiles and initializes correctly. Starts the REPL but needs `getchar()` runtime support
-for interactive input. The compiler and codegen are fully working for this project.
+Required multiple compiler fixes to work:
+- BigInt representation for doubles (preserves NaN payloads that JS normally canonicalizes)
+- `getchar()`/`putchar()`/`puts()` runtime support
+- `sscanf` length modifier (`%lg`) and `%n` format support
+- Signed `long long` (TY_LLONG) BigInt codegen
+- Ternary expression type coercion for mixed `long long`/`double` branches
+- Function pointer call return type derivation in sema
+
+```
+(+ 1 2) => 3
+(* 4 5) => 20
+(define fact (lambda (n) (if (< n 2) 1 (* n (fact (- n 1))))))
+(fact 10) => 3628800
+(define fib (lambda (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
+(fib 7) => 13
+(let* (x 3) (y 4) (+ x y)) => 7
+(int 3.7) => 3
+```
 
 ### 5. tinyexpr -- PASS
 
@@ -116,5 +132,10 @@ unknown type ("expected ';', got 'identifier'").
 
 1. ~~`defined()` in preprocessor~~ -- **FIXED**: Process `defined(X)` before macro expansion per C99 6.10.1
 2. ~~Global init ordering for function pointers~~ -- **FIXED**: Emit function pointer registrations before global data
-3. **`setjmp`/`longjmp` support** -- would unblock full lisp interpreter (map to JS exceptions)
-4. **`getchar()` runtime support** -- would unblock tinylisp REPL
+3. ~~`getchar()`/`putchar()`/`puts()` runtime~~ -- **FIXED**: Added to runtime for character I/O
+4. ~~BigInt double representation~~ -- **FIXED**: Doubles stored as BigInt raw bits to preserve NaN payloads
+5. ~~`sscanf` length modifiers~~ -- **FIXED**: Handle `%lg`, `%lld`, `%n`, exponential notation
+6. ~~Signed `long long` codegen~~ -- **FIXED**: TY_LLONG uses BigInt (readBigInt64/writeBigInt64)
+7. ~~Ternary type coercion~~ -- **FIXED**: Codegen wraps mismatched branches with appropriate conversions
+8. ~~Function pointer call types~~ -- **FIXED**: Sema derives return type from callee's function pointer type
+9. **`setjmp`/`longjmp` support** -- would unblock full lisp interpreter (map to JS exceptions)

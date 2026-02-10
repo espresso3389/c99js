@@ -217,6 +217,15 @@ static void check_expr(Sema *s, Node *n) {
         check_expr(s, n->callee);
         for (Node *arg = n->args; arg; arg = arg->next)
             check_expr(s, arg);
+        /* Derive return type from callee's function/function-pointer type.
+         * The parser may have defaulted to int if the callee type wasn't
+         * available yet (e.g. struct member function pointers). */
+        if (n->callee && n->callee->type) {
+            Type *ct = n->callee->type;
+            if (ct->kind == TY_PTR && ct->base) ct = ct->base;
+            if (ct->kind == TY_FUNC && ct->return_type)
+                n->type = ct->return_type;
+        }
         ensure_type(s, n);
         break;
 

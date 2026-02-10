@@ -86,6 +86,27 @@ static CGVar *var_find(CodeGen *cg, const char *name) {
 }
 
 /* ---- Type helpers ---- */
+
+/* True if type is long long (signed or unsigned) -- needs BigInt in JS */
+static bool type_is_u64(Type *t) {
+    return t && t->kind == TY_LLONG;
+}
+
+/* True if an expression's result type is uint64_t (BigInt in JS) */
+static bool expr_is_u64(Node *n) {
+    return n && type_is_u64(n->type);
+}
+
+/* True if type is double or long double -- stored as BigInt raw bits in JS */
+static bool type_is_double(Type *t) {
+    return t && (t->kind == TY_DOUBLE || t->kind == TY_LDOUBLE);
+}
+
+/* True if an expression produces a double (BigInt raw bits in JS) */
+static bool expr_is_double(Node *n) {
+    return n && type_is_double(n->type);
+}
+
 /* Memory class uses readXxx/writeXxx (always little-endian) */
 static const char *js_getter(Type *t) {
     if (!t) return "readInt32";
@@ -96,9 +117,9 @@ static const char *js_getter(Type *t) {
     case TY_INT: case TY_ENUM:
         return t->is_unsigned ? "readUint32" : "readInt32";
     case TY_LONG:  return t->is_unsigned ? "readUint32" : "readInt32";
-    case TY_LLONG: return "readFloat64";
+    case TY_LLONG: return t->is_unsigned ? "readBigUint64" : "readBigInt64";
     case TY_FLOAT: return "readFloat32";
-    case TY_DOUBLE: case TY_LDOUBLE: return "readFloat64";
+    case TY_DOUBLE: case TY_LDOUBLE: return "readBigUint64";
     case TY_PTR:   return "readUint32";
     default:       return "readInt32";
     }
@@ -113,9 +134,9 @@ static const char *js_setter(Type *t) {
     case TY_INT: case TY_ENUM:
         return t->is_unsigned ? "writeUint32" : "writeInt32";
     case TY_LONG:  return t->is_unsigned ? "writeUint32" : "writeInt32";
-    case TY_LLONG: return "writeFloat64";
+    case TY_LLONG: return t->is_unsigned ? "writeBigUint64" : "writeBigInt64";
     case TY_FLOAT: return "writeFloat32";
-    case TY_DOUBLE: case TY_LDOUBLE: return "writeFloat64";
+    case TY_DOUBLE: case TY_LDOUBLE: return "writeBigUint64";
     case TY_PTR:   return "writeUint32";
     default:       return "writeInt32";
     }
@@ -270,6 +291,22 @@ static bool is_math_func(const char *name) {
 }
 
 /* ---- Expression generation ---- */
+static void gen_expr(CodeGen *cg, Node *n);
+
+/* Emit expression as a JS float64 number (not BigInt).
+ * Doubles (BigInt raw bits) are converted via rt.f64(),
+ * uint64_t (BigInt integer) via Number().
+ * Other types (int, float) are already JS numbers. */
+static void gen_f64_val(CodeGen *cg, Node *n) {
+    if (expr_is_double(n)) {
+        emit(cg, "rt.f64("); gen_expr(cg, n); emit(cg, ")");
+    } else if (expr_is_u64(n)) {
+        emit(cg, "Number("); gen_expr(cg, n); emit(cg, ")");
+    } else {
+        gen_expr(cg, n);
+    }
+}
+
 static void gen_expr(CodeGen *cg, Node *n) {
     if (!n) { emit(cg, "0"); return; }
 
@@ -278,7 +315,10 @@ static void gen_expr(CodeGen *cg, Node *n) {
         emit(cg, "%lld", (long long)n->ival);
         break;
     case ND_FLOAT_LIT:
-        emit(cg, "%.17g", n->fval);
+        if (n->type && n->type->kind == TY_FLOAT)
+            emit(cg, "%.17g", n->fval);
+        else
+            emit(cg, "rt.f64bits(%.17g)", n->fval);
         break;
     case ND_CHAR_LIT:
         emit(cg, "%d", n->cval);
@@ -347,7 +387,11 @@ static void gen_expr(CodeGen *cg, Node *n) {
     }
 
     case ND_NEG:
-        emit(cg, "(-("); gen_expr(cg, n->lhs); emit(cg, "))");
+        if (expr_is_double(n)) {
+            emit(cg, "rt.f64bits(-rt.f64("); gen_expr(cg, n->lhs); emit(cg, "))");
+        } else {
+            emit(cg, "(-("); gen_expr(cg, n->lhs); emit(cg, "))");
+        }
         break;
     case ND_POS:
         emit(cg, "(+("); gen_expr(cg, n->lhs); emit(cg, "))");
@@ -379,10 +423,17 @@ static void gen_expr(CodeGen *cg, Node *n) {
         if (n->lhs->type && n->lhs->type->kind == TY_PTR)
             step = type_sz(n->lhs->type->base);
         Type *lt = n->lhs->type;
-        emit(cg, "((function(){ var a = ");
-        gen_addr(cg, n->lhs);
-        emit(cg, "; var v = rt.mem.%s(a) %s %d; rt.mem.%s(a, v); return v; })())",
-               js_getter(lt), op, step, js_setter(lt));
+        if (type_is_double(lt)) {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var v = rt.f64bits(rt.f64(rt.mem.readBigUint64(a)) %s %d); rt.mem.writeBigUint64(a, v); return v; })())",
+                   op, step);
+        } else {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var v = rt.mem.%s(a) %s %d; rt.mem.%s(a, v); return v; })())",
+                   js_getter(lt), op, step, js_setter(lt));
+        }
         break;
     }
     case ND_POST_INC: case ND_POST_DEC: {
@@ -391,10 +442,17 @@ static void gen_expr(CodeGen *cg, Node *n) {
         if (n->lhs->type && n->lhs->type->kind == TY_PTR)
             step = type_sz(n->lhs->type->base);
         Type *lt = n->lhs->type;
-        emit(cg, "((function(){ var a = ");
-        gen_addr(cg, n->lhs);
-        emit(cg, "; var old = rt.mem.%s(a); rt.mem.%s(a, old %s %d); return old; })())",
-               js_getter(lt), js_setter(lt), op, step);
+        if (type_is_double(lt)) {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var old = rt.mem.readBigUint64(a); rt.mem.writeBigUint64(a, rt.f64bits(rt.f64(old) %s %d)); return old; })())",
+                   op, step);
+        } else {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var old = rt.mem.%s(a); rt.mem.%s(a, old %s %d); return old; })())",
+                   js_getter(lt), js_setter(lt), op, step);
+        }
         break;
     }
 
@@ -422,6 +480,45 @@ static void gen_expr(CodeGen *cg, Node *n) {
         case ND_BITAND: op = "&"; break; case ND_BITOR: op = "|"; break;
         case ND_BITXOR: op = "^"; break;
         default: op = "+"; break;
+        }
+
+        /* Float64 mode: when result or either operand is double, convert
+         * operands to JS numbers via gen_f64_val and wrap result in rt.f64bits.
+         * Must be checked BEFORE u64mode since double + uint64_t → double. */
+        bool f64mode = expr_is_double(n->lhs) || expr_is_double(n->rhs) || type_is_double(n->type);
+        if (f64mode) {
+            bool is_cmp = (n->kind >= ND_LT && n->kind <= ND_NE);
+            if (is_cmp) {
+                emit(cg, "((");
+                gen_f64_val(cg, n->lhs);
+                emit(cg, " %s ", op);
+                gen_f64_val(cg, n->rhs);
+                emit(cg, ") ? 1 : 0)");
+            } else {
+                emit(cg, "rt.f64bits(");
+                gen_f64_val(cg, n->lhs);
+                emit(cg, " %s ", op);
+                gen_f64_val(cg, n->rhs);
+                emit(cg, ")");
+            }
+            break;
+        }
+
+        /* BigInt mode: when either operand is uint64_t, all arithmetic
+         * must use BigInt. Non-BigInt operands are wrapped with BigInt(). */
+        bool u64mode = expr_is_u64(n->lhs) || expr_is_u64(n->rhs) || type_is_u64(n->type);
+        if (u64mode) {
+            bool is_cmp = (n->kind >= ND_LT && n->kind <= ND_NE);
+            emit(cg, "(");
+            if (!expr_is_u64(n->lhs)) emit(cg, "BigInt(");
+            gen_expr(cg, n->lhs);
+            if (!expr_is_u64(n->lhs)) emit(cg, ")");
+            emit(cg, " %s ", op);
+            if (!expr_is_u64(n->rhs)) emit(cg, "BigInt(");
+            gen_expr(cg, n->rhs);
+            if (!expr_is_u64(n->rhs)) emit(cg, ")");
+            emit(cg, ")");
+            break;
         }
 
         bool lp = n->lhs->type && (type_is_ptr(n->lhs->type) || type_is_array(n->lhs->type));
@@ -466,11 +563,36 @@ static void gen_expr(CodeGen *cg, Node *n) {
         gen_expr(cg, n->rhs); emit(cg, ") ? 1 : 0)");
         break;
 
-    case ND_TERNARY:
+    case ND_TERNARY: {
+        /* When ternary result is double but a branch is i64, wrap with f64bits(Number())
+         * When ternary result is double but a branch is int, wrap with f64bits() */
+        bool res_double = type_is_double(n->type);
+        bool rhs_u64 = expr_is_u64(n->rhs);
+        bool third_u64 = expr_is_u64(n->third);
+        bool rhs_double = expr_is_double(n->rhs);
+        bool third_double = expr_is_double(n->third);
+
         emit(cg, "("); gen_expr(cg, n->lhs); emit(cg, " ? ");
-        gen_expr(cg, n->rhs); emit(cg, " : ");
-        gen_expr(cg, n->third); emit(cg, ")");
+
+        if (res_double && rhs_u64 && !rhs_double)
+            { emit(cg, "rt.f64bits(Number("); gen_expr(cg, n->rhs); emit(cg, "))"); }
+        else if (res_double && !rhs_double && !rhs_u64)
+            { emit(cg, "rt.f64bits("); gen_expr(cg, n->rhs); emit(cg, ")"); }
+        else
+            gen_expr(cg, n->rhs);
+
+        emit(cg, " : ");
+
+        if (res_double && third_u64 && !third_double)
+            { emit(cg, "rt.f64bits(Number("); gen_expr(cg, n->third); emit(cg, "))"); }
+        else if (res_double && !third_double && !third_u64)
+            { emit(cg, "rt.f64bits("); gen_expr(cg, n->third); emit(cg, ")"); }
+        else
+            gen_expr(cg, n->third);
+
+        emit(cg, ")");
         break;
+    }
 
     case ND_COMMA:
         emit(cg, "("); gen_expr(cg, n->lhs); emit(cg, ", ");
@@ -513,11 +635,19 @@ static void gen_expr(CodeGen *cg, Node *n) {
         default: op = "+"; break;
         }
         Type *lt = n->lhs->type;
-        emit(cg, "((function(){ var a = ");
-        gen_addr(cg, n->lhs);
-        emit(cg, "; var v = rt.mem.%s(a) %s (", js_getter(lt), op);
-        gen_expr(cg, n->rhs);
-        emit(cg, "); rt.mem.%s(a, v); return v; })())", js_setter(lt));
+        if (type_is_double(lt)) {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var v = rt.f64bits(rt.f64(rt.mem.readBigUint64(a)) %s ", op);
+            gen_f64_val(cg, n->rhs);
+            emit(cg, "); rt.mem.writeBigUint64(a, v); return v; })())");
+        } else {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var v = rt.mem.%s(a) %s (", js_getter(lt), op);
+            gen_expr(cg, n->rhs);
+            emit(cg, "); rt.mem.%s(a, v); return v; })())", js_setter(lt));
+        }
         break;
     }
 
@@ -570,9 +700,19 @@ static void gen_expr(CodeGen *cg, Node *n) {
             emit(cg, "(");
         }
 
-        if (is_direct && is_math_func(fname)) {
+        bool is_math = is_direct && is_math_func(fname);
+        bool is_stdlib = is_direct && is_stdlib_func(fname);
+        bool ret_f64 = !sret && type_is_double(n->type);
+        /* Math/stdlib functions return JS numbers; wrap result in f64bits */
+        bool wrap_ret = (is_math || is_stdlib) && ret_f64;
+        /* Math/stdlib functions expect JS numbers; unwrap double args */
+        bool unwrap_args = is_math || is_stdlib;
+
+        if (wrap_ret) emit(cg, "rt.f64bits(");
+
+        if (is_math) {
             emit(cg, "Math.%s(", math_func_js_name(fname));
-        } else if (is_direct && is_stdlib_func(fname)) {
+        } else if (is_stdlib) {
             emit(cg, "rt.%s(", fname);
         } else if (is_direct) {
             emit(cg, "_%s(", fname);
@@ -590,10 +730,18 @@ static void gen_expr(CodeGen *cg, Node *n) {
         }
 
         for (Node *a = n->args; a; a = a->next) {
-            gen_expr(cg, a);
+            if (unwrap_args && expr_is_double(a)) {
+                emit(cg, "rt.f64(");
+                gen_expr(cg, a);
+                emit(cg, ")");
+            } else {
+                gen_expr(cg, a);
+            }
             if (a->next) emit(cg, ", ");
         }
         emit(cg, ")");
+
+        if (wrap_ret) emit(cg, ")");
 
         if (sret) {
             emit(cg, ", (bp + (%d)))", sret_off);
@@ -644,25 +792,65 @@ static void gen_expr(CodeGen *cg, Node *n) {
         }
         break;
 
-    case ND_CAST:
-        if (n->cast_type && type_is_integer(n->cast_type) && n->cast_type->size <= 4) {
-            if (n->cast_type->kind == TY_CHAR && !n->cast_type->is_unsigned) {
-                emit(cg, "(("); gen_expr(cg, n->cast_expr); emit(cg, ") << 24 >> 24)");
-            } else if (n->cast_type->kind == TY_SHORT && !n->cast_type->is_unsigned) {
-                emit(cg, "(("); gen_expr(cg, n->cast_expr); emit(cg, ") << 16 >> 16)");
-            } else if (n->cast_type->kind == TY_CHAR && n->cast_type->is_unsigned) {
-                emit(cg, "(("); gen_expr(cg, n->cast_expr); emit(cg, ") & 0xFF)");
-            } else if (n->cast_type->kind == TY_SHORT && n->cast_type->is_unsigned) {
-                emit(cg, "(("); gen_expr(cg, n->cast_expr); emit(cg, ") & 0xFFFF)");
-            } else if (n->cast_type->is_unsigned) {
-                emit(cg, "(("); gen_expr(cg, n->cast_expr); emit(cg, ") >>> 0)");
+    case ND_CAST: {
+        bool to_double = n->cast_type && type_is_double(n->cast_type);
+        bool from_double = expr_is_double(n->cast_expr);
+        bool to_u64 = n->cast_type && type_is_u64(n->cast_type);
+        bool from_u64 = expr_is_u64(n->cast_expr);
+        bool to_float32 = n->cast_type && n->cast_type->kind == TY_FLOAT;
+        bool to_int = n->cast_type && type_is_integer(n->cast_type) && n->cast_type->size <= 4;
+
+        if (to_double) {
+            /* Cast TO double: result must be BigInt raw bits */
+            if (from_double) {
+                gen_expr(cg, n->cast_expr);
+            } else if (from_u64) {
+                /* uint64_t→double: numeric conversion (BigInt int → float → bits) */
+                emit(cg, "rt.f64bits(Number("); gen_expr(cg, n->cast_expr); emit(cg, "))");
             } else {
-                emit(cg, "(("); gen_expr(cg, n->cast_expr); emit(cg, ") | 0)");
+                /* int/float→double: JS number → BigInt raw float64 bits */
+                emit(cg, "rt.f64bits("); gen_expr(cg, n->cast_expr); emit(cg, ")");
+            }
+        } else if (to_u64) {
+            if (from_double) {
+                /* double→uint64_t: numeric conversion (bits → float → truncate → BigInt) */
+                emit(cg, "BigInt(Math.trunc(rt.f64("); gen_expr(cg, n->cast_expr); emit(cg, ")))");
+            } else {
+                /* int/float→uint64_t: wrap in BigInt() */
+                emit(cg, "BigInt("); gen_expr(cg, n->cast_expr); emit(cg, ")");
+            }
+        } else if (to_float32 && from_double) {
+            /* double→float32: BigInt raw bits → JS number (narrowed to float32) */
+            emit(cg, "Math.fround(rt.f64("); gen_expr(cg, n->cast_expr); emit(cg, "))");
+        } else if (to_float32 && from_u64) {
+            /* uint64_t→float32: BigInt integer → JS number */
+            emit(cg, "Number("); gen_expr(cg, n->cast_expr); emit(cg, ")");
+        } else if (to_int) {
+            /* Cast to int/short/char: may need to unwrap BigInt/double first.
+             * For from_u64: mask BigInt to 32 bits BEFORE Number() to avoid
+             * precision loss for values > 2^53. */
+            const char *pre = "", *suf = "";
+            if (from_double)   { pre = "rt.f64("; suf = ")"; }
+            else if (from_u64) { pre = "Number("; suf = " & 0xFFFFFFFFn)"; }
+
+            if (n->cast_type->kind == TY_CHAR && !n->cast_type->is_unsigned) {
+                emit(cg, "((%s", pre); gen_expr(cg, n->cast_expr); emit(cg, "%s) << 24 >> 24)", suf);
+            } else if (n->cast_type->kind == TY_SHORT && !n->cast_type->is_unsigned) {
+                emit(cg, "((%s", pre); gen_expr(cg, n->cast_expr); emit(cg, "%s) << 16 >> 16)", suf);
+            } else if (n->cast_type->kind == TY_CHAR && n->cast_type->is_unsigned) {
+                emit(cg, "((%s", pre); gen_expr(cg, n->cast_expr); emit(cg, "%s) & 0xFF)", suf);
+            } else if (n->cast_type->kind == TY_SHORT && n->cast_type->is_unsigned) {
+                emit(cg, "((%s", pre); gen_expr(cg, n->cast_expr); emit(cg, "%s) & 0xFFFF)", suf);
+            } else if (n->cast_type->is_unsigned) {
+                emit(cg, "((%s", pre); gen_expr(cg, n->cast_expr); emit(cg, "%s) >>> 0)", suf);
+            } else {
+                emit(cg, "((%s", pre); gen_expr(cg, n->cast_expr); emit(cg, "%s) | 0)", suf);
             }
         } else {
             gen_expr(cg, n->cast_expr);
         }
         break;
+    }
 
     case ND_COMPOUND_LIT:
         emit(cg, "0 /* compound_lit */");

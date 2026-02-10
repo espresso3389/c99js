@@ -54,6 +54,12 @@ class Memory {
   writeFloat32(addr, v) { this.view.setFloat32(addr, v, true); }
   writeFloat64(addr, v) { this.view.setFloat64(addr, v, true); }
 
+  // -- 64-bit integer helpers (BigInt) --
+  readBigUint64(addr) { return this.view.getBigUint64(addr, true); }
+  readBigInt64(addr)  { return this.view.getBigInt64(addr, true); }
+  writeBigUint64(addr, val) { this.view.setBigUint64(addr, BigInt(val), true); }
+  writeBigInt64(addr, val)  { this.view.setBigInt64(addr, BigInt(val), true); }
+
   // -- string helpers --
   readString(addr) {
     let s = '';
@@ -182,6 +188,10 @@ class Runtime {
     this._randState = 1;
     this._startTime = Date.now();
 
+    // Scratch buffer for float64 <-> BigInt conversions (NaN-safe)
+    this._tmpBuf = new ArrayBuffer(8);
+    this._tmpView = new DataView(this._tmpBuf);
+
     // Function pointer table: integer ID → JS function
     this._funcTable = [null]; // index 0 = NULL function pointer
     this._funcMap = new Map(); // fn → id (for deduplication)
@@ -216,6 +226,19 @@ class Runtime {
 
     // va_list table: index → { args: [...], pos: 0 }
     this._vaLists = [null]; // index 0 reserved
+  }
+
+  // ======================== float64 <-> BigInt (NaN-safe) ===================
+  // Doubles are stored as BigInt (raw 64-bit IEEE 754 bits) to preserve NaN
+  // payloads for NaN-boxing.  These helpers convert between representations.
+  f64(bits) {
+    this._tmpView.setBigUint64(0, BigInt(bits), true);
+    return this._tmpView.getFloat64(0, true);
+  }
+
+  f64bits(num) {
+    this._tmpView.setFloat64(0, Number(num), true);
+    return this._tmpView.getBigUint64(0, true);
   }
 
   // ======================== function pointer table ==========================
@@ -382,21 +405,21 @@ class Runtime {
           break;
         }
         case 'f': case 'F': {
-          let n = Number(val);
+          let n = typeof val === 'bigint' ? this.f64(val) : Number(val);
           if (prec < 0) prec = 6;
           s = this._fmtFloat(n, prec, flags, false);
           s = this._pad(s, width, flags);
           break;
         }
         case 'e': case 'E': {
-          let n = Number(val);
+          let n = typeof val === 'bigint' ? this.f64(val) : Number(val);
           if (prec < 0) prec = 6;
           s = this._fmtExp(n, prec, flags, spec === 'E');
           s = this._pad(s, width, flags);
           break;
         }
         case 'g': case 'G': {
-          let n = Number(val);
+          let n = typeof val === 'bigint' ? this.f64(val) : Number(val);
           if (prec < 0) prec = 6;
           if (prec === 0) prec = 1;
           s = this._fmtG(n, prec, flags, spec === 'G');
@@ -578,22 +601,43 @@ class Runtime {
   _scanString(fmt, input, argPtrs) {
     let fi = 0, si = 0, matched = 0;
     let ai = 0;
-    while (fi < fmt.length && si < input.length) {
+    while (fi < fmt.length) {
       if (fmt[fi] !== '%') {
         if (/\s/.test(fmt[fi])) { fi++; while (si < input.length && /\s/.test(input[si])) si++; continue; }
-        if (fmt[fi] !== input[si]) return matched || -1;
+        if (si >= input.length || fmt[fi] !== input[si]) return matched || -1;
         fi++; si++; continue;
       }
       fi++; // skip %
       if (fi >= fmt.length) break;
-      if (fmt[fi] === '%') { if (input[si] === '%') { fi++; si++; continue; } else return matched; }
+      if (fmt[fi] === '%') { if (si < input.length && input[si] === '%') { fi++; si++; continue; } else return matched; }
+
+      // Optional '*' (assignment suppression)
+      let suppress = false;
+      if (fmt[fi] === '*') { suppress = true; fi++; }
 
       // Optional width
       let maxWidth = 0;
       while (fi < fmt.length && fmt[fi] >= '0' && fmt[fi] <= '9') { maxWidth = maxWidth * 10 + (fmt[fi] - '0'); fi++; }
 
+      // Length modifier (h, hh, l, ll, L, z, j, t)
+      let lenMod = '';
+      if (fi < fmt.length && 'hlLzjt'.includes(fmt[fi])) {
+        lenMod = fmt[fi++];
+        if (fi < fmt.length && ((lenMod === 'h' && fmt[fi] === 'h') || (lenMod === 'l' && fmt[fi] === 'l'))) {
+          lenMod += fmt[fi++];
+        }
+      }
+
       const spec = fmt[fi++];
-      const ptr = argPtrs[ai++];
+      const ptr = suppress ? null : argPtrs[ai++];
+
+      // %n doesn't consume input
+      if (spec === 'n') {
+        if (ptr != null) this.mem.writeInt32(ptr, si);
+        continue;
+      }
+
+      if (si >= input.length) break;
 
       // Skip leading whitespace for d, f, s (not c)
       if (spec !== 'c') { while (si < input.length && /\s/.test(input[si])) si++; }
@@ -606,7 +650,10 @@ class Runtime {
           if ((input[si] === '-' || input[si] === '+') && limit > 0) { numStr += input[si++]; limit--; }
           while (si < input.length && limit > 0 && input[si] >= '0' && input[si] <= '9') { numStr += input[si++]; limit--; }
           if (numStr === '' || numStr === '-' || numStr === '+') return matched || -1;
-          this.mem.writeInt32(ptr, parseInt(numStr, 10));
+          if (ptr != null) {
+            if (lenMod === 'll') this.mem.writeBigInt64(ptr, BigInt(numStr));
+            else this.mem.writeInt32(ptr, parseInt(numStr, 10));
+          }
           matched++;
           break;
         }
@@ -615,22 +662,39 @@ class Runtime {
           let limit = maxWidth || Infinity;
           while (si < input.length && limit > 0 && input[si] >= '0' && input[si] <= '9') { numStr += input[si++]; limit--; }
           if (numStr === '') return matched || -1;
-          this.mem.writeUint32(ptr, parseInt(numStr, 10) >>> 0);
+          if (ptr != null) {
+            if (lenMod === 'll') this.mem.writeBigUint64(ptr, BigInt(numStr));
+            else this.mem.writeUint32(ptr, parseInt(numStr, 10) >>> 0);
+          }
           matched++;
           break;
         }
-        case 'f': case 'e': case 'g': {
+        case 'x': case 'X': {
+          let numStr = '';
+          let limit = maxWidth || Infinity;
+          if (si + 1 < input.length && input[si] === '0' && (input[si+1] === 'x' || input[si+1] === 'X') && limit > 2) { si += 2; limit -= 2; }
+          while (si < input.length && limit > 0 && /[0-9a-fA-F]/.test(input[si])) { numStr += input[si++]; limit--; }
+          if (numStr === '') return matched || -1;
+          if (ptr != null) this.mem.writeUint32(ptr, parseInt(numStr, 16) >>> 0);
+          matched++;
+          break;
+        }
+        case 'f': case 'e': case 'g': case 'E': case 'G': {
           let numStr = '';
           let limit = maxWidth || Infinity;
           if ((input[si] === '-' || input[si] === '+') && limit > 0) { numStr += input[si++]; limit--; }
-          let hasDot = false;
+          let hasDot = false, hasExp = false;
           while (si < input.length && limit > 0) {
             if (input[si] >= '0' && input[si] <= '9') { numStr += input[si++]; limit--; }
-            else if (input[si] === '.' && !hasDot) { hasDot = true; numStr += input[si++]; limit--; }
+            else if (input[si] === '.' && !hasDot && !hasExp) { hasDot = true; numStr += input[si++]; limit--; }
+            else if ((input[si] === 'e' || input[si] === 'E') && !hasExp && numStr.length > 0 && numStr !== '-' && numStr !== '+') {
+              hasExp = true; numStr += input[si++]; limit--;
+              if (si < input.length && limit > 0 && (input[si] === '-' || input[si] === '+')) { numStr += input[si++]; limit--; }
+            }
             else break;
           }
           if (numStr === '' || numStr === '-' || numStr === '+') return matched || -1;
-          this.mem.writeFloat64(ptr, parseFloat(numStr));
+          if (ptr != null) this.mem.writeFloat64(ptr, parseFloat(numStr));
           matched++;
           break;
         }
@@ -639,12 +703,13 @@ class Runtime {
           let limit = maxWidth || Infinity;
           while (si < input.length && limit > 0 && !/\s/.test(input[si])) { str += input[si++]; limit--; }
           if (str === '') return matched || -1;
-          this.mem.writeString(ptr, str);
+          if (ptr != null) this.mem.writeString(ptr, str);
           matched++;
           break;
         }
         case 'c': {
-          this.mem.writeUint8(ptr, input.charCodeAt(si++) & 0xFF);
+          if (ptr != null) this.mem.writeUint8(ptr, input.charCodeAt(si) & 0xFF);
+          si++;
           matched++;
           break;
         }
@@ -1187,6 +1252,39 @@ class Runtime {
   get stdin()  { return this.STDIN_PTR; }
   get stdout() { return this.STDOUT_PTR; }
   get stderr() { return this.STDERR_PTR; }
+
+  // ======================== getchar / putchar / puts =========================
+  getchar() {
+    // Read one char from stdin (synchronous)
+    if (this._stdinPos < this._stdinBuf.length) {
+      return this._stdinBuf.charCodeAt(this._stdinPos++);
+    }
+    // Try to read more from stdin
+    if (fs) {
+      try {
+        const buf = Buffer.alloc(1);
+        const bytesRead = fs.readSync(0, buf, 0, 1);
+        if (bytesRead === 0) { this._stdinEof = true; return -1; }
+        return buf[0];
+      } catch (e) {
+        this._stdinEof = true;
+        return -1;
+      }
+    }
+    this._stdinEof = true;
+    return -1;
+  }
+
+  putchar(ch) {
+    this._writeStdout(String.fromCharCode(ch & 0xFF));
+    return ch & 0xFF;
+  }
+
+  puts(addr) {
+    const s = this.mem.readString(addr);
+    this._writeStdout(s + '\n');
+    return s.length + 1;
+  }
 
   // ======================== assert ==========================================
   assert(expr, msgAddr) {
