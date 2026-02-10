@@ -155,6 +155,7 @@ static bool is_aggregate(Type *t) {
 static void gen_expr(CodeGen *cg, Node *n);
 static void gen_addr(CodeGen *cg, Node *n);
 static void gen_stmt(CodeGen *cg, Node *n);
+static void gen_block_stmts(CodeGen *cg, Node *stmts);
 static int alloc_local(CodeGen *cg, Type *ty);
 static void gen_global_init(CodeGen *cg, int addr, Type *ty, Node *init);
 
@@ -175,6 +176,8 @@ void codegen_init(CodeGen *cg, Arena *a, SymTab *st) {
     cg->has_goto = false;
     cg->goto_state = 0;
     cg->symtab = st;
+    cg->setjmp_counter = 0;
+    cg->current_setjmp_id = -1;
     memset(cg->locals, 0, sizeof(cg->locals));
     memset(cg->globals, 0, sizeof(cg->globals));
 }
@@ -248,10 +251,10 @@ static bool is_stdlib_func(const char *name) {
         "ispunct","isprint","iscntrl","isxdigit","toupper","tolower",
         "fopen","fclose","fread","fwrite","fgets","fputs","feof",
         "fgetc","fputc","fseek","ftell","rewind","fflush",
-        "puts","putchar","getchar","assert","perror",
+        "puts","putchar","getchar","getc","putc","gets","assert","perror",
         "clock","time","difftime","localtime","strftime",
         "strdup","strtoll","strtoul","strtoull","vsnprintf","vfprintf",
-        "__errno_ptr",
+        "__errno_ptr","freopen","signal",
         NULL
     };
     for (int i = 0; names[i]; i++) {
@@ -288,6 +291,58 @@ static const char *math_func_js_name(const char *name) {
 
 static bool is_math_func(const char *name) {
     return math_func_js_name(name) != NULL;
+}
+
+/* ---- setjmp detection helpers ---- */
+
+/* Recursively check if an expression tree contains a setjmp() call */
+static bool contains_setjmp_expr(Node *n) {
+    if (!n) return false;
+    if (n->kind == ND_CALL && n->callee && n->callee->kind == ND_IDENT &&
+        strcmp(n->callee->name, "setjmp") == 0)
+        return true;
+    /* Check standard children (lhs/rhs/third are separate from union) */
+    if (contains_setjmp_expr(n->lhs)) return true;
+    if (contains_setjmp_expr(n->rhs)) return true;
+    if (contains_setjmp_expr(n->third)) return true;
+    /* Check union-specific children */
+    switch (n->kind) {
+    case ND_CALL:
+        if (contains_setjmp_expr(n->callee)) return true;
+        for (Node *a = n->args; a; a = a->next)
+            if (contains_setjmp_expr(a)) return true;
+        break;
+    case ND_CAST: case ND_COMPOUND_LIT:
+        if (contains_setjmp_expr(n->cast_expr)) return true;
+        break;
+    default: break;
+    }
+    return false;
+}
+
+/* Check if a statement's immediate expressions contain setjmp() */
+static bool stmt_contains_setjmp(Node *n) {
+    if (!n) return false;
+    switch (n->kind) {
+    case ND_EXPR_STMT:
+        return contains_setjmp_expr(n->lhs);
+    case ND_IF:
+    case ND_WHILE:
+    case ND_DO_WHILE:
+        return contains_setjmp_expr(n->lhs);
+    case ND_FOR:
+        return contains_setjmp_expr(n->for_cond) ||
+               contains_setjmp_expr(n->for_init) ||
+               contains_setjmp_expr(n->for_inc);
+    case ND_SWITCH:
+        return contains_setjmp_expr(n->switch_expr);
+    case ND_VAR_DECL:
+        return n->var_init && contains_setjmp_expr(n->var_init);
+    case ND_RETURN:
+        return contains_setjmp_expr(n->lhs);
+    default:
+        return false;
+    }
 }
 
 /* ---- Expression generation ---- */
@@ -681,6 +736,29 @@ static void gen_expr(CodeGen *cg, Node *n) {
             break;
         }
 
+        /* setjmp(env) → (__sjN_id = rt._setjmp(env_addr), __sjN) */
+        if (fname && strcmp(fname, "setjmp") == 0) {
+            int sj = cg->current_setjmp_id;
+            if (sj >= 0) {
+                emit(cg, "(__sj%d_id = rt._setjmp(", sj);
+                gen_expr(cg, n->args);
+                emit(cg, "), __sj%d)", sj);
+            } else {
+                emit(cg, "0 /* setjmp outside try/catch context */");
+            }
+            break;
+        }
+
+        /* longjmp(env, val) → rt.longjmp(env_addr, val) */
+        if (fname && strcmp(fname, "longjmp") == 0) {
+            emit(cg, "rt.longjmp(");
+            gen_expr(cg, n->args);
+            emit(cg, ", ");
+            gen_expr(cg, n->args->next);
+            emit(cg, ")");
+            break;
+        }
+
         bool is_direct = false;
         bool sret = is_aggregate(n->type);
         if (fname) {
@@ -729,15 +807,33 @@ static void gen_expr(CodeGen *cg, Node *n) {
             if (n->args) emit(cg, ", ");
         }
 
+        /* Get parameter types for BigInt→Number coercion at call boundary */
+        Type *call_fn_type = NULL;
+        if (n->callee && n->callee->type) {
+            call_fn_type = n->callee->type;
+            if (call_fn_type->kind == TY_PTR && call_fn_type->base)
+                call_fn_type = call_fn_type->base;
+            if (call_fn_type->kind != TY_FUNC) call_fn_type = NULL;
+        }
+        Param *cparam = call_fn_type ? call_fn_type->params : NULL;
+
         for (Node *a = n->args; a; a = a->next) {
+            bool coerce_bigint = false;
+            if (cparam && expr_is_u64(a) && !type_is_u64(cparam->type) && !type_is_double(cparam->type))
+                coerce_bigint = true;
             if (unwrap_args && expr_is_double(a)) {
                 emit(cg, "rt.f64(");
                 gen_expr(cg, a);
                 emit(cg, ")");
+            } else if (coerce_bigint) {
+                emit(cg, "Number(");
+                gen_expr(cg, a);
+                emit(cg, " & 0xFFFFFFFFn)");
             } else {
                 gen_expr(cg, a);
             }
             if (a->next) emit(cg, ", ");
+            if (cparam) cparam = cparam->next;
         }
         emit(cg, ")");
 
@@ -918,13 +1014,51 @@ static void gen_init(CodeGen *cg, const char *bp_expr, int base_offset, Type *ty
     }
 }
 
+/* Generate a list of statements, detecting setjmp and wrapping in try/catch.
+ * When a statement contains setjmp(), it and ALL remaining statements in the
+ * list are wrapped in: while(true) { try { ... break; } catch { ... } }
+ * Nested setjmps are handled by recursive calls. */
+static void gen_block_stmts(CodeGen *cg, Node *stmts) {
+    for (Node *s = stmts; s; s = s->next) {
+        if (stmt_contains_setjmp(s)) {
+            int sj = cg->setjmp_counter++;
+            int prev_sj = cg->current_setjmp_id;
+            cg->current_setjmp_id = sj;
+
+            emitln(cg, "var __sj%d = 0, __sj%d_id;", sj, sj);
+            emit_indent(cg);
+            emit(cg, "__sj%d_loop: while (true) { var __sj%d_sp = rt.mem.sp; try {\n", sj, sj);
+            cg->indent++;
+
+            /* Generate the statement containing setjmp */
+            gen_stmt(cg, s);
+            /* Generate remaining statements (recursive for nested setjmps) */
+            gen_block_stmts(cg, s->next);
+
+            emitln(cg, "break __sj%d_loop;", sj);
+            cg->indent--;
+            emitln(cg, "} catch (__sj%d_e) {", sj);
+            cg->indent++;
+            emitln(cg, "if (__sj%d_e.name === 'LongjmpException' && __sj%d_e.id === __sj%d_id) {",
+                   sj, sj, sj);
+            emitln(cg, "  rt.mem.sp = __sj%d_sp; __sj%d = __sj%d_e.val; continue __sj%d_loop; }",
+                   sj, sj, sj, sj);
+            emitln(cg, "throw __sj%d_e; } }", sj);
+            cg->indent--;
+
+            cg->current_setjmp_id = prev_sj;
+            return; /* remaining stmts already emitted above */
+        }
+        gen_stmt(cg, s);
+    }
+}
+
 static void gen_stmt(CodeGen *cg, Node *n) {
     if (!n) return;
 
     switch (n->kind) {
     case ND_BLOCK:
-        for (Node *s = n->body; s; s = s->next)
-            gen_stmt(cg, s);
+        gen_block_stmts(cg, n->body);
         break;
 
     case ND_VAR_DECL: {
@@ -1044,7 +1178,11 @@ static void gen_stmt(CodeGen *cg, Node *n) {
     }
 
     case ND_SWITCH:
-        emit_indent(cg); emit(cg, "switch ("); gen_expr(cg, n->switch_expr); emit(cg, ") {\n");
+        emit_indent(cg);
+        if (expr_is_u64(n->switch_expr))
+            { emit(cg, "switch (Number("); gen_expr(cg, n->switch_expr); emit(cg, ")) {\n"); }
+        else
+            { emit(cg, "switch ("); gen_expr(cg, n->switch_expr); emit(cg, ") {\n"); }
         cg->indent++;
         gen_stmt(cg, n->switch_body);
         cg->indent--;

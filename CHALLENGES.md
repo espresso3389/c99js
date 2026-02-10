@@ -9,13 +9,13 @@ Pure C projects from GitHub, tested against the c99js compiler.
 | 1 | [kokke/tiny-AES-c](https://github.com/kokke/tiny-AES-c) | ~570 | **PASS** | AES-128 ECB/CBC/CTR all correct |
 | 2 | [CTrabant/teeny-sha1](https://github.com/CTrabant/teeny-sha1) | ~160 | **PASS** | All 4 SHA-1 vectors correct |
 | 3 | [kokke/tiny-regex-c](https://github.com/kokke/tiny-regex-c) | ~520 | **PASS** | 26/26 regex tests passed |
-| 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **PASS** | Full REPL works: arithmetic, lambda, define, recursion, closures, let*, cond |
+| 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **FAIL** | Basic tests pass; aborts on deep recursion (fib 10) -- GC/stack issue |
 | 5 | [codeplea/tinyexpr](https://github.com/codeplea/tinyexpr) | ~600 | **PASS** | All 8 math expression tests passed |
 | 6 | [rxi/ini](https://github.com/rxi/ini) | ~200 | **PASS** | INI parse/read all tests passed |
 | 7 | [rswier/c4](https://github.com/rswier/c4) | ~365 | not compilable | POSIX-only: unistd.h, fcntl.h, open/read/close, `#define int long long` |
-| 8 | [Robert-van-Engelen/lisp](https://github.com/Robert-van-Engelen/lisp) | ~730 | partial | Unit tests pass (NaN-boxing works); full interpreter needs setjmp/longjmp |
+| 8 | [Robert-van-Engelen/lisp](https://github.com/Robert-van-Engelen/lisp) | ~730 | **PASS** | Full interpreter works: NaN-boxing, setjmp/longjmp, lambda, define, cond |
 
-**Score: 7/8 passing (compile+run), 1 code issue**
+**Score: 6/8 passing (compile+run), 1 fail, 1 code issue**
 
 ## Detailed Results
 
@@ -55,7 +55,7 @@ anchors `^`/`$`, quantifiers `+`/`?`/`*`, dot `.`, and combined patterns.
 === Results: 26/26 tests passed ===
 ```
 
-### 4. tinylisp -- PASS
+### 4. tinylisp -- FAIL (partial)
 
 Full NaN-boxing Lisp interpreter with REPL. Uses `double` type punning via `unsigned long long`
 casts to encode tagged values (ATOM, PRIM, CONS, CLOS, NIL) in NaN payloads.
@@ -68,16 +68,18 @@ Required multiple compiler fixes to work:
 - Ternary expression type coercion for mixed `long long`/`double` branches
 - Function pointer call return type derivation in sema
 
+**Basic tests pass** (arithmetic, comparisons, conditionals, lambda, define, square, fact):
 ```
 (+ 1 2) => 3
 (* 4 5) => 20
+(define square (lambda (x) (* x x)))
+(square 7) => 49
 (define fact (lambda (n) (if (< n 2) 1 (* n (fact (- n 1))))))
 (fact 10) => 3628800
-(define fib (lambda (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
-(fib 7) => 13
-(let* (x 3) (y 4) (+ x y)) => 7
-(int 3.7) => 3
 ```
+
+**Aborts on deep recursion** (`fib 10`): exit code 134. Likely caused by tinylisp's
+custom GC/memory management hitting limits in the transpiled JS environment.
 
 ### 5. tinyexpr -- PASS
 
@@ -117,16 +119,30 @@ c4 is inherently POSIX-dependent and not portable C99:
 
 This is a **code limitation**, not a c99js limitation.
 
-### 8. Robert-van-Engelen/lisp -- partial
+### 8. Robert-van-Engelen/lisp -- PASS
 
-**Unit tests pass:** The NaN-boxing mechanism (`box`/`ord`/`T` macros using `uint64_t` type punning)
-works correctly. `box(ATOM, 42)` produces `tag = 32762` (0x7FFA) as expected.
+Full NaN-boxing Lisp interpreter (~730 lines) with `setjmp`/`longjmp` error handling.
+Required all of the tinylisp NaN-boxing fixes plus additional compiler work:
+- `setjmp`/`longjmp` mapped to JavaScript `try`/`catch`/`throw` (detect `setjmp` in block
+  statements, wrap in `while(true) { try { ... break; } catch { ... continue; } }`)
+- BigInt→Number coercion at function call boundaries (`Number(x & 0xFFFFFFFFn)`)
+- `switch` expression wrapping for BigInt types (`switch(Number(expr))`)
+- `freopen` EOF handling for graceful exit on piped input
+- Constant folding for computed array sizes (`try_eval_const` in parser)
 
-**Full interpreter fails to compile:** `lisp.c` uses `<setjmp.h>` (`jmp_buf`, `setjmp`, `longjmp`)
-for error handling, which c99js does not support. The parser reports `jmp_buf` as an
-unknown type ("expected ';', got 'identifier'").
-
-**Compiler fix needed:** Implement `setjmp`/`longjmp` support (could map to JS try/catch).
+All 12 test expressions evaluate correctly:
+```
+(+ 1 2) => 3
+(* 3 4) => 12
+(if 1 2 3) => 2
+(if () 10 20) => 20
+(define x 42) => x, x => 42
+(define f (lambda (n) (* n n))) => f, (f 7) => 49
+(list 1 2 3) => (1 2 3)
+(quote hello) => hello
+(begin 1 2 3) => 3
+(cond (#t 99)) => 99
+```
 
 ## Compiler Fixes Applied (from challenges)
 
@@ -138,4 +154,9 @@ unknown type ("expected ';', got 'identifier'").
 6. ~~Signed `long long` codegen~~ -- **FIXED**: TY_LLONG uses BigInt (readBigInt64/writeBigInt64)
 7. ~~Ternary type coercion~~ -- **FIXED**: Codegen wraps mismatched branches with appropriate conversions
 8. ~~Function pointer call types~~ -- **FIXED**: Sema derives return type from callee's function pointer type
-9. **`setjmp`/`longjmp` support** -- would unblock full lisp interpreter (map to JS exceptions)
+9. ~~`setjmp`/`longjmp` support~~ -- **FIXED**: Maps to JS `try`/`catch`/`throw` with while-loop wrapper
+10. ~~BigInt→Number coercion at call boundaries~~ -- **FIXED**: Wrap BigInt args with `Number(x & 0xFFFFFFFFn)` when callee expects smaller int
+11. ~~`switch` on BigInt expressions~~ -- **FIXED**: Wrap switch expression with `Number()` when type is uint64_t
+12. ~~`freopen` EOF handling~~ -- **FIXED**: Exit gracefully when stdin is reopened after EOF
+13. ~~Constant folding for array sizes~~ -- **FIXED**: `try_eval_const()` evaluates compile-time expressions like `(N+N)`
+14. ~~`__VA_ARGS__` length check~~ -- **FIXED**: Off-by-one in preprocessor token length comparison

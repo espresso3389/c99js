@@ -192,6 +192,9 @@ class Runtime {
     this._tmpBuf = new ArrayBuffer(8);
     this._tmpView = new DataView(this._tmpBuf);
 
+    // setjmp/longjmp state
+    this._setjmpCounter = 0;
+
     // Function pointer table: integer ID → JS function
     this._funcTable = [null]; // index 0 = NULL function pointer
     this._funcMap = new Map(); // fn → id (for deduplication)
@@ -947,6 +950,23 @@ class Runtime {
     this.exit(134);
   }
 
+  // ======================== setjmp / longjmp ==================================
+  _setjmp(envPtr) {
+    const id = ++this._setjmpCounter;
+    this.mem.writeInt32(envPtr, id);
+    return id;
+  }
+
+  longjmp(envPtr, val) {
+    const id = this.mem.readInt32(envPtr);
+    throw new LongjmpException(id, val || 1); // C standard: longjmp(env,0) → 1
+  }
+
+  // ======================== signal (stub) =====================================
+  signal(sig, handler) {
+    return 0; // SIG_DFL — signal handling not supported in JS environment
+  }
+
   perror(addr) {
     const prefix = addr ? this.mem.readString(addr) : '';
     if (prefix) this._writeStderr(prefix + ': error\n');
@@ -1254,6 +1274,30 @@ class Runtime {
   get stderr() { return this.STDERR_PTR; }
 
   // ======================== getchar / putchar / puts =========================
+  getc(filePtr) { return this.fgetc(filePtr); }
+  putc(ch, filePtr) { return this.fputc(ch, filePtr); }
+
+  gets(bufAddr) {
+    // Read a line from stdin (deprecated C function, but needed for compatibility)
+    const line = this._readStdinLine();
+    if (!line && this._stdinEof) return 0;
+    // Remove trailing newline (gets doesn't include it)
+    const trimmed = line.replace(/\n$/, '');
+    this.mem.writeString(bufAddr, trimmed);
+    return bufAddr;
+  }
+
+  freopen(filenameAddr, modeAddr, filePtr) {
+    // When stdin is reopened after EOF (e.g., freopen("/dev/tty","r",stdin)),
+    // exit gracefully since there's no terminal to reopen in piped context
+    if (filePtr === this.STDIN_PTR && this._stdinEof) {
+      process.exit(0);
+    }
+    if (filePtr === this.STDIN_PTR || filePtr === this.STDOUT_PTR || filePtr === this.STDERR_PTR)
+      return filePtr;
+    return 0;
+  }
+
   getchar() {
     // Read one char from stdin (synchronous)
     if (this._stdinPos < this._stdinBuf.length) {
@@ -1432,6 +1476,18 @@ class ExitException extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// LongjmpException used by longjmp()
+// ---------------------------------------------------------------------------
+class LongjmpException extends Error {
+  constructor(id, val) {
+    super(`longjmp(${val})`);
+    this.name = 'LongjmpException';
+    this.id = id;
+    this.val = val;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
 function digitVal(ch, base) {
@@ -1447,6 +1503,7 @@ function digitVal(ch, base) {
 // Export
 // ---------------------------------------------------------------------------
 Runtime.ExitException = ExitException;
+Runtime.LongjmpException = LongjmpException;
 Runtime.Memory = Memory;
 
-module.exports = { Runtime, ExitException, Memory };
+module.exports = { Runtime, ExitException, LongjmpException, Memory };

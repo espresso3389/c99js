@@ -26,6 +26,47 @@ static bool  is_type_name(Parser *p);
 #define EXPECT(k) lexer_expect(p->lexer, (k))
 #define LOC (p->lexer->cur.loc)
 
+/* Try to evaluate a constant expression at compile time.
+ * Returns true and sets *result if the expression is a compile-time constant. */
+static bool try_eval_const(Node *n, long long *result) {
+    if (!n) return false;
+    if (n->kind == ND_INT_LIT) { *result = (long long)n->ival; return true; }
+    if (n->kind == ND_CHAR_LIT) { *result = n->cval; return true; }
+    long long l, r;
+    switch (n->kind) {
+    case ND_NEG: return try_eval_const(n->lhs, &l) ? (*result = -l, true) : false;
+    case ND_NOT: return try_eval_const(n->lhs, &l) ? (*result = !l, true) : false;
+    case ND_BITNOT: return try_eval_const(n->lhs, &l) ? (*result = ~l, true) : false;
+    case ND_ADD: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l + r, true) : false;
+    case ND_SUB: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l - r, true) : false;
+    case ND_MUL: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l * r, true) : false;
+    case ND_DIV: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r) && r != 0) ? (*result = l / r, true) : false;
+    case ND_MOD: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r) && r != 0) ? (*result = l % r, true) : false;
+    case ND_LSHIFT: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l << r, true) : false;
+    case ND_RSHIFT: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l >> r, true) : false;
+    case ND_LT: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l < r, true) : false;
+    case ND_LE: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l <= r, true) : false;
+    case ND_GT: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l > r, true) : false;
+    case ND_GE: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l >= r, true) : false;
+    case ND_EQ: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l == r, true) : false;
+    case ND_NE: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l != r, true) : false;
+    case ND_BITAND: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l & r, true) : false;
+    case ND_BITOR: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l | r, true) : false;
+    case ND_BITXOR: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l ^ r, true) : false;
+    case ND_AND: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l && r, true) : false;
+    case ND_OR: return (try_eval_const(n->lhs, &l) && try_eval_const(n->rhs, &r)) ? (*result = l || r, true) : false;
+    case ND_TERNARY: {
+        long long c, t, e;
+        if (try_eval_const(n->lhs, &c) && try_eval_const(n->rhs, &t) && try_eval_const(n->third, &e))
+            return *result = c ? t : e, true;
+        return false;
+    }
+    case ND_CAST:
+        return try_eval_const(n->cast_expr, result);
+    default: return false;
+    }
+}
+
 void parser_init(Parser *p, Lexer *l, Arena *a, SymTab *st) {
     p->lexer = l;
     p->arena = a;
@@ -461,8 +502,9 @@ static Type *parse_declarator(Parser *p, Type *base, const char **name) {
                 } else {
                     Node *size = parse_assign_expr(p);
                     EXPECT(TK_RBRACKET);
-                    if (size->kind == ND_INT_LIT) {
-                        base = type_array(p->arena, base, (int)size->ival);
+                    long long cv;
+                    if (try_eval_const(size, &cv)) {
+                        base = type_array(p->arena, base, (int)cv);
                     } else {
                         base = type_vla(p->arena, base, size);
                     }
@@ -470,8 +512,9 @@ static Type *parse_declarator(Parser *p, Type *base, const char **name) {
             } else {
                 Node *size = parse_assign_expr(p);
                 EXPECT(TK_RBRACKET);
-                if (size->kind == ND_INT_LIT) {
-                    base = type_array(p->arena, base, (int)size->ival);
+                long long cv;
+                if (try_eval_const(size, &cv)) {
+                    base = type_array(p->arena, base, (int)cv);
                 } else {
                     base = type_vla(p->arena, base, size);
                 }

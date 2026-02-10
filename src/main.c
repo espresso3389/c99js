@@ -178,6 +178,10 @@ static void register_builtins(SymTab *st, Arena *a) {
     s = symtab_define(st, "perror", SYM_FUNC, type_func(a, ty_void), loc); s->sc = SC_EXTERN;
     s = symtab_define(st, "sscanf", SYM_FUNC, printf_ty, loc); s->sc = SC_EXTERN;
     s = symtab_define(st, "signal", SYM_FUNC, type_func(a, type_ptr(a, ty_void)), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "getc", SYM_FUNC, type_func(a, ty_int), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "putc", SYM_FUNC, type_func(a, ty_int), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "freopen", SYM_FUNC, type_func(a, type_ptr(a, ty_void)), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "gets", SYM_FUNC, type_func(a, type_ptr(a, ty_char)), loc); s->sc = SC_EXTERN;
 
     /* Define FILE as void* for simplicity */
     Type *file_ty = type_ptr(a, ty_void);
@@ -257,6 +261,29 @@ static void register_builtins(SymTab *st, Arena *a) {
     /* clock() -> clock_t (long) */
     Type *clock_ty = type_func(a, ty_long);
     s = symtab_define(st, "clock", SYM_FUNC, clock_ty, loc); s->sc = SC_EXTERN;
+
+    /* jmp_buf typedef: array of int[8] (32 bytes for setjmp/longjmp state) */
+    Type *jmpbuf_ty = type_array(a, ty_int, 8);
+    s = symtab_define(st, "jmp_buf", SYM_TYPEDEF, jmpbuf_ty, loc);
+    s->sc = SC_TYPEDEF;
+
+    /* setjmp(jmp_buf env) -> int */
+    Type *setjmp_ty = type_func(a, ty_int);
+    Param *sjp = arena_calloc(a, sizeof(Param));
+    sjp->name = "env";
+    sjp->type = type_ptr(a, ty_int);
+    setjmp_ty->params = sjp;
+    s = symtab_define(st, "setjmp", SYM_FUNC, setjmp_ty, loc); s->sc = SC_EXTERN;
+
+    /* longjmp(jmp_buf env, int val) -> void */
+    Type *longjmp_ty = type_func(a, ty_void);
+    Param *ljp1 = arena_calloc(a, sizeof(Param));
+    ljp1->name = "env"; ljp1->type = type_ptr(a, ty_int);
+    Param *ljp2 = arena_calloc(a, sizeof(Param));
+    ljp2->name = "val"; ljp2->type = ty_int;
+    ljp1->next = ljp2;
+    longjmp_ty->params = ljp1;
+    s = symtab_define(st, "longjmp", SYM_FUNC, longjmp_ty, loc); s->sc = SC_EXTERN;
 }
 
 int main(int argc, char **argv) {

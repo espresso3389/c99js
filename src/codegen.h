@@ -41,6 +41,10 @@ typedef struct {
 
     /* struct return support */
     Type   *current_func_ret_type; /* return type of current function */
+
+    /* setjmp/longjmp support */
+    int     setjmp_counter;   /* unique setjmp variable counter */
+    int     current_setjmp_id; /* active setjmp context (-1 if none) */
 } CodeGen;
 
 void codegen_init(CodeGen *cg, Arena *a, SymTab *st);

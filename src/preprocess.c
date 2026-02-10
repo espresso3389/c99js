@@ -472,7 +472,7 @@ static void expand_macros_r(const char *input, Buf *out, const char *filename, i
                         size_t blen = (size_t)(bp - bs);
 
                         /* Check if it's __VA_ARGS__ */
-                        if (blen == 12 && memcmp(bs, "__VA_ARGS__", 11) == 0) {
+                        if (blen == 11 && memcmp(bs, "__VA_ARGS__", 11) == 0) {
                             int param_count = 0;
                             for (MacroParam *mp = m->params; mp; mp = mp->next) param_count++;
                             for (int i = param_count; i < nargs; i++) {
