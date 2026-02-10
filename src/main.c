@@ -183,6 +183,11 @@ static void register_builtins(SymTab *st, Arena *a) {
     s = symtab_define(st, "freopen", SYM_FUNC, type_func(a, type_ptr(a, ty_void)), loc); s->sc = SC_EXTERN;
     s = symtab_define(st, "gets", SYM_FUNC, type_func(a, type_ptr(a, ty_char)), loc); s->sc = SC_EXTERN;
 
+    /* POSIX-style file I/O */
+    s = symtab_define(st, "open", SYM_FUNC, type_func(a, ty_int), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "read", SYM_FUNC, type_func(a, ty_int), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "close", SYM_FUNC, type_func(a, ty_int), loc); s->sc = SC_EXTERN;
+
     /* Define FILE as void* for simplicity */
     Type *file_ty = type_ptr(a, ty_void);
     s = symtab_define(st, "stdin", SYM_VAR, file_ty, loc); s->sc = SC_EXTERN;

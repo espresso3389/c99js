@@ -12,10 +12,10 @@ Pure C projects from GitHub, tested against the c99js compiler.
 | 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **PASS** | GC version: arithmetic, lambda, recursion, fib(10), closures, let* |
 | 5 | [codeplea/tinyexpr](https://github.com/codeplea/tinyexpr) | ~600 | **PASS** | All 8 math expression tests passed |
 | 6 | [rxi/ini](https://github.com/rxi/ini) | ~200 | **PASS** | INI parse/read all tests passed |
-| 7 | [rswier/c4](https://github.com/rswier/c4) | ~365 | not compilable | POSIX-only: unistd.h, fcntl.h, open/read/close, `#define int long long` |
+| 7 | [rswier/c4](https://github.com/rswier/c4) | ~365 | **PASS** | C interpreter VM compiles and runs hello.c correctly |
 | 8 | [Robert-van-Engelen/lisp](https://github.com/Robert-van-Engelen/lisp) | ~730 | **PASS** | Full interpreter works: NaN-boxing, setjmp/longjmp, lambda, define, cond |
 
-**Score: 7/8 passing (compile+run), 1 code issue**
+**Score: 8/8 passing (compile+run)**
 
 ## Detailed Results
 
@@ -112,15 +112,24 @@ and reading values by section/key. Null return for missing keys works correctly.
 All tests passed!
 ```
 
-### 7. c4 -- not compilable (code issue, not compiler)
+### 7. c4 -- PASS
 
-c4 is inherently POSIX-dependent and not portable C99:
-- Uses `#include <memory.h>`, `<unistd.h>`, `<fcntl.h>` (POSIX headers)
-- Uses `open()`, `read()`, `close()` for file I/O (POSIX syscalls)
-- Uses `#define int long long` to redefine the `int` keyword
-- Would need `malloc`, `memset`, and file system access even if headers were available
+A C interpreter/VM written in C (~365 lines). Compiles C source code to bytecode and executes
+it on a virtual stack machine. Uses `#define int long long` to make all `int` types 64-bit.
 
-This is a **code limitation**, not a c99js limitation.
+Required POSIX stubs and several BigInt-related compiler fixes:
+- Stub headers for `<memory.h>`, `<unistd.h>`, `<fcntl.h>`
+- POSIX `open()`/`read()`/`close()` runtime implementations
+- BigInt→Number conversion in pre/post increment/decrement for `long long` types
+- BigInt→Number conversion in pointer arithmetic (`ptr + BigInt_index`)
+- BigInt→pointer cast handling (`(char *)long_long_value`)
+- `process.exit(Number(main_result))` for BigInt return values
+
+Successfully compiles and runs `hello.c`:
+```
+hello, world
+exit(0) cycle = 9
+```
 
 ### 8. Robert-van-Engelen/lisp -- PASS
 
@@ -163,3 +172,8 @@ All 12 test expressions evaluate correctly:
 12. ~~`freopen` EOF handling~~ -- **FIXED**: Exit gracefully when stdin is reopened after EOF
 13. ~~Constant folding for array sizes~~ -- **FIXED**: `try_eval_const()` evaluates compile-time expressions like `(N+N)`
 14. ~~`__VA_ARGS__` length check~~ -- **FIXED**: Off-by-one in preprocessor token length comparison
+15. ~~POSIX `open`/`read`/`close`~~ -- **FIXED**: Added as runtime functions + built-in declarations
+16. ~~BigInt inc/dec step~~ -- **FIXED**: Use `BigInt(step)` in pre/post increment for `long long` types
+17. ~~Pointer + BigInt arithmetic~~ -- **FIXED**: Wrap BigInt index with `Number()` in pointer add/subscript
+18. ~~BigInt→pointer cast~~ -- **FIXED**: `Number(expr & 0xFFFFFFFFn)` when casting `long long` to pointer
+19. ~~BigInt main return~~ -- **FIXED**: `process.exit(Number(main()))` handles BigInt return values

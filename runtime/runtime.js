@@ -1099,6 +1099,45 @@ class Runtime {
     return 0;
   }
 
+  // ======================== POSIX-style File I/O (open/read/close) ===========
+  open(pathnameAddr, flags) {
+    if (!fs) return -1;
+    const pathname = this.mem.readString(pathnameAddr);
+    try {
+      let nodeFlags = 'r';
+      if (flags & 1) nodeFlags = (flags & 2) ? 'r+' : 'w';
+      else if (flags & 2) nodeFlags = 'r+';
+      const fd = fs.openSync(pathname, nodeFlags);
+      return fd;
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  read(fd, bufAddr, count) {
+    if (!fs) return -1;
+    try {
+      const tempBuf = Buffer.alloc(count);
+      const bytesRead = fs.readSync(fd, tempBuf, 0, count);
+      for (let i = 0; i < bytesRead; i++) {
+        this.mem.u8[bufAddr + i] = tempBuf[i];
+      }
+      return bytesRead;
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  close(fd) {
+    if (!fs) return -1;
+    try {
+      fs.closeSync(fd);
+      return 0;
+    } catch (e) {
+      return -1;
+    }
+  }
+
   fread(bufAddr, elemSize, count, filePtr) {
     const fd = this._filePtrToFd.get(filePtr);
     if (fd === undefined) return 0;

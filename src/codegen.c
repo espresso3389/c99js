@@ -224,9 +224,12 @@ static void gen_addr(CodeGen *cg, Node *n) {
     case ND_SUBSCRIPT: {
         emit(cg, "(");
         gen_expr(cg, n->lhs);
-        emit(cg, " + (");
+        emit(cg, " + ");
+        /* When index is BigInt (long long), convert to Number for address arithmetic */
+        bool idx_bigint = expr_is_u64(n->rhs);
+        if (idx_bigint) emit(cg, "Number(");
         gen_expr(cg, n->rhs);
-        emit(cg, ")");
+        if (idx_bigint) emit(cg, ")");
         if (n->type && type_sz(n->type) > 1)
             emit(cg, " * %d", type_sz(n->type));
         emit(cg, ")");
@@ -255,6 +258,7 @@ static bool is_stdlib_func(const char *name) {
         "clock","time","difftime","localtime","strftime",
         "strdup","strtoll","strtoul","strtoull","vsnprintf","vfprintf",
         "__errno_ptr","freopen","signal",
+        "open","read","close",
         NULL
     };
     for (int i = 0; names[i]; i++) {
@@ -483,6 +487,11 @@ static void gen_expr(CodeGen *cg, Node *n) {
             gen_addr(cg, n->lhs);
             emit(cg, "; var v = rt.f64bits(rt.f64(rt.mem.readBigUint64(a)) %s %d); rt.mem.writeBigUint64(a, v); return v; })())",
                    op, step);
+        } else if (type_is_u64(lt)) {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var v = rt.mem.%s(a) %s BigInt(%d); rt.mem.%s(a, v); return v; })())",
+                   js_getter(lt), op, step, js_setter(lt));
         } else {
             emit(cg, "((function(){ var a = ");
             gen_addr(cg, n->lhs);
@@ -502,6 +511,11 @@ static void gen_expr(CodeGen *cg, Node *n) {
             gen_addr(cg, n->lhs);
             emit(cg, "; var old = rt.mem.readBigUint64(a); rt.mem.writeBigUint64(a, rt.f64bits(rt.f64(old) %s %d)); return old; })())",
                    op, step);
+        } else if (type_is_u64(lt)) {
+            emit(cg, "((function(){ var a = ");
+            gen_addr(cg, n->lhs);
+            emit(cg, "; var old = rt.mem.%s(a); rt.mem.%s(a, old %s BigInt(%d)); return old; })())",
+                   js_getter(lt), js_setter(lt), op, step);
         } else {
             emit(cg, "((function(){ var a = ");
             gen_addr(cg, n->lhs);
@@ -559,43 +573,64 @@ static void gen_expr(CodeGen *cg, Node *n) {
             break;
         }
 
-        /* BigInt mode: when either operand is uint64_t, all arithmetic
-         * must use BigInt. Non-BigInt operands are wrapped with BigInt(). */
-        bool u64mode = expr_is_u64(n->lhs) || expr_is_u64(n->rhs) || type_is_u64(n->type);
-        if (u64mode) {
-            bool is_cmp = (n->kind >= ND_LT && n->kind <= ND_NE);
-            emit(cg, "(");
-            if (!expr_is_u64(n->lhs)) emit(cg, "BigInt(");
-            gen_expr(cg, n->lhs);
-            if (!expr_is_u64(n->lhs)) emit(cg, ")");
-            emit(cg, " %s ", op);
-            if (!expr_is_u64(n->rhs)) emit(cg, "BigInt(");
-            gen_expr(cg, n->rhs);
-            if (!expr_is_u64(n->rhs)) emit(cg, ")");
-            emit(cg, ")");
-            break;
-        }
-
+        /* Pointer arithmetic must be checked before BigInt mode, because
+         * ptr + BigInt needs Number conversion, not BigInt wrapping. */
         bool lp = n->lhs->type && (type_is_ptr(n->lhs->type) || type_is_array(n->lhs->type));
         bool rp = n->rhs->type && (type_is_ptr(n->rhs->type) || type_is_array(n->rhs->type));
 
         if ((n->kind == ND_ADD || n->kind == ND_SUB) && lp && !rp) {
             int esz = n->lhs->type->base ? type_sz(n->lhs->type->base) : 1;
             emit(cg, "("); gen_expr(cg, n->lhs); emit(cg, " %s ", op);
+            if (expr_is_u64(n->rhs)) emit(cg, "Number(");
             gen_expr(cg, n->rhs);
+            if (expr_is_u64(n->rhs)) emit(cg, ")");
             if (esz > 1) emit(cg, " * %d", esz);
             emit(cg, ")");
+            break;
         } else if (n->kind == ND_ADD && rp && !lp) {
             int esz = n->rhs->type->base ? type_sz(n->rhs->type->base) : 1;
-            emit(cg, "("); gen_expr(cg, n->lhs);
+            emit(cg, "(");
+            if (expr_is_u64(n->lhs)) emit(cg, "Number(");
+            gen_expr(cg, n->lhs);
+            if (expr_is_u64(n->lhs)) emit(cg, ")");
             if (esz > 1) emit(cg, " * %d", esz);
             emit(cg, " + "); gen_expr(cg, n->rhs); emit(cg, ")");
+            break;
         } else if (n->kind == ND_SUB && lp && rp) {
             int esz = n->lhs->type->base ? type_sz(n->lhs->type->base) : 1;
             emit(cg, "(("); gen_expr(cg, n->lhs); emit(cg, " - "); gen_expr(cg, n->rhs);
             emit(cg, ")");
             if (esz > 1) emit(cg, " / %d", esz);
             emit(cg, " | 0)");
+            break;
+        }
+
+        /* BigInt mode: when either operand is uint64_t, all arithmetic
+         * must use BigInt. Non-BigInt operands are wrapped with BigInt(). */
+        bool u64mode = expr_is_u64(n->lhs) || expr_is_u64(n->rhs) || type_is_u64(n->type);
+        if (u64mode) {
+            bool is_cmp = (n->kind >= ND_LT && n->kind <= ND_NE);
+            if (is_cmp) {
+                emit(cg, "((");
+                if (!expr_is_u64(n->lhs)) emit(cg, "BigInt(");
+                gen_expr(cg, n->lhs);
+                if (!expr_is_u64(n->lhs)) emit(cg, ")");
+                emit(cg, " %s ", op);
+                if (!expr_is_u64(n->rhs)) emit(cg, "BigInt(");
+                gen_expr(cg, n->rhs);
+                if (!expr_is_u64(n->rhs)) emit(cg, ")");
+                emit(cg, ") ? 1 : 0)");
+            } else {
+                emit(cg, "(");
+                if (!expr_is_u64(n->lhs)) emit(cg, "BigInt(");
+                gen_expr(cg, n->lhs);
+                if (!expr_is_u64(n->lhs)) emit(cg, ")");
+                emit(cg, " %s ", op);
+                if (!expr_is_u64(n->rhs)) emit(cg, "BigInt(");
+                gen_expr(cg, n->rhs);
+                if (!expr_is_u64(n->rhs)) emit(cg, ")");
+                emit(cg, ")");
+            }
         } else if (n->kind == ND_DIV && n->type && type_is_integer(n->type)) {
             emit(cg, "(("); gen_expr(cg, n->lhs); emit(cg, " / ");
             gen_expr(cg, n->rhs); emit(cg, ") | 0)");
@@ -942,6 +977,12 @@ static void gen_expr(CodeGen *cg, Node *n) {
             } else {
                 emit(cg, "((%s", pre); gen_expr(cg, n->cast_expr); emit(cg, "%s) | 0)", suf);
             }
+        } else if (type_is_ptr(n->cast_type) && from_u64) {
+            /* BigInt→pointer: convert to Number (32-bit address) */
+            emit(cg, "Number("); gen_expr(cg, n->cast_expr); emit(cg, " & 0xFFFFFFFFn)");
+        } else if (from_u64 && !to_u64) {
+            /* BigInt→other non-pointer: convert to Number */
+            emit(cg, "Number("); gen_expr(cg, n->cast_expr); emit(cg, ")");
         } else {
             gen_expr(cg, n->cast_expr);
         }
@@ -1456,9 +1497,9 @@ void codegen_generate(CodeGen *cg, Node *program) {
         emit(cg, "const __argv = rt.malloc((__argv_ptrs.length + 1) * 4);\n");
         emit(cg, "for (let i = 0; i < __argv_ptrs.length; i++) rt.mem.writeUint32(__argv + i * 4, __argv_ptrs[i]);\n");
         emit(cg, "rt.mem.writeUint32(__argv + __argv_ptrs.length * 4, 0);\n");
-        emit(cg, "try {\n  process.exit(_main(__argv_ptrs.length, __argv) | 0);\n");
+        emit(cg, "try {\n  process.exit(Number(_main(__argv_ptrs.length, __argv)));\n");
     } else {
-        emit(cg, "try {\n  process.exit(_main() | 0);\n");
+        emit(cg, "try {\n  process.exit(Number(_main()));\n");
     }
     emit(cg, "} catch (e) {\n");
     emit(cg, "  if (e.name === 'ExitException') process.exit(e.code);\n");
