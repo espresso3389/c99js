@@ -9,13 +9,13 @@ Pure C projects from GitHub, tested against the c99js compiler.
 | 1 | [kokke/tiny-AES-c](https://github.com/kokke/tiny-AES-c) | ~570 | **PASS** | AES-128 ECB/CBC/CTR all correct |
 | 2 | [CTrabant/teeny-sha1](https://github.com/CTrabant/teeny-sha1) | ~160 | **PASS** | All 4 SHA-1 vectors correct |
 | 3 | [kokke/tiny-regex-c](https://github.com/kokke/tiny-regex-c) | ~520 | **PASS** | 26/26 regex tests passed |
-| 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **FAIL** | Basic tests pass; aborts on deep recursion (fib 10) -- GC/stack issue |
+| 4 | [Robert-van-Engelen/tinylisp](https://github.com/Robert-van-Engelen/tinylisp) | ~385 | **PASS** | GC version: arithmetic, lambda, recursion, fib(10), closures, let* |
 | 5 | [codeplea/tinyexpr](https://github.com/codeplea/tinyexpr) | ~600 | **PASS** | All 8 math expression tests passed |
 | 6 | [rxi/ini](https://github.com/rxi/ini) | ~200 | **PASS** | INI parse/read all tests passed |
 | 7 | [rswier/c4](https://github.com/rswier/c4) | ~365 | not compilable | POSIX-only: unistd.h, fcntl.h, open/read/close, `#define int long long` |
 | 8 | [Robert-van-Engelen/lisp](https://github.com/Robert-van-Engelen/lisp) | ~730 | **PASS** | Full interpreter works: NaN-boxing, setjmp/longjmp, lambda, define, cond |
 
-**Score: 6/8 passing (compile+run), 1 fail, 1 code issue**
+**Score: 7/8 passing (compile+run), 1 code issue**
 
 ## Detailed Results
 
@@ -55,10 +55,14 @@ anchors `^`/`$`, quantifiers `+`/`?`/`*`, dot `.`, and combined patterns.
 === Results: 26/26 tests passed ===
 ```
 
-### 4. tinylisp -- FAIL (partial)
+### 4. tinylisp -- PASS
 
 Full NaN-boxing Lisp interpreter with REPL. Uses `double` type punning via `unsigned long long`
 casts to encode tagged values (ATOM, PRIM, CONS, CLOS, NIL) in NaN payloads.
+
+Uses `tinylisp-gc.c` (GC version with reference counting + mark-sweep, N=8192).
+The original `tinylisp.c` (N=1024, no real GC) aborts on `(fib 10)` even in native C
+due to insufficient cell pool for tree-recursive fibonacci.
 
 Required multiple compiler fixes to work:
 - BigInt representation for doubles (preserves NaN payloads that JS normally canonicalizes)
@@ -67,8 +71,8 @@ Required multiple compiler fixes to work:
 - Signed `long long` (TY_LLONG) BigInt codegen
 - Ternary expression type coercion for mixed `long long`/`double` branches
 - Function pointer call return type derivation in sema
+- `setjmp`/`longjmp` for GC version error handling
 
-**Basic tests pass** (arithmetic, comparisons, conditionals, lambda, define, square, fact):
 ```
 (+ 1 2) => 3
 (* 4 5) => 20
@@ -76,10 +80,9 @@ Required multiple compiler fixes to work:
 (square 7) => 49
 (define fact (lambda (n) (if (< n 2) 1 (* n (fact (- n 1))))))
 (fact 10) => 3628800
+(define fib (lambda (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
+(fib 10) => 55
 ```
-
-**Aborts on deep recursion** (`fib 10`): exit code 134. Likely caused by tinylisp's
-custom GC/memory management hitting limits in the transpiled JS environment.
 
 ### 5. tinyexpr -- PASS
 
