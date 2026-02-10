@@ -24,8 +24,25 @@ Real-world C projects compiled to JavaScript with c99js.
 | 18 | [DaveGamble/cJSON](https://github.com/DaveGamble/cJSON) | ~5,100 | **PASS** | 66/66 JSON library tests, extensive goto refactoring |
 | 19 | [tidwall/btree.c](https://github.com/tidwall/btree.c) | ~1,570 | **PASS** | 153/153 B-tree tests, major structural refactoring |
 | 20 | [mpaland/printf](https://github.com/mpaland/printf) | ~1,690 | **PASS** | 27/27 printf formatting tests, va_arg workaround |
+| 21 | [983/SHA-256](https://github.com/983/SHA-256) | ~200 | pending | SHA-256 with test vectors |
+| 22 | [capmar/sxml](https://github.com/capmar/sxml) | ~420 | pending | jsmn-inspired XML parser |
+| 23 | [zserge/expr](https://github.com/zserge/expr) | ~600 | pending | Math expression evaluator, C99 |
+| 24 | [brendanashworth/fft-small](https://github.com/brendanashworth/fft-small) | ~200 | pending | Embedded FFT |
+| 25 | [phoboslab/qoi](https://github.com/phoboslab/qoi) | ~300 | pending | QOI image codec |
+| 26 | [jacketizer/libyuarel](https://github.com/jacketizer/libyuarel) | ~200 | pending | Zero-copy URL parser |
+| 27 | [skeeto/xf8](https://github.com/skeeto/xf8) | ~300 | pending | Xor filter (probabilistic set) |
+| 28 | [grigorig/chachapoly](https://github.com/grigorig/chachapoly) | ~800 | pending | ChaCha20-Poly1305 AEAD |
+| 29 | [h5p9sl/hmac_sha256](https://github.com/h5p9sl/hmac_sha256) | ~500 | pending | HMAC-SHA256 |
+| 30 | [nigeltao/sflz4](https://github.com/nigeltao/sflz4) | ~500 | pending | Single-file LZ4 |
+| 31 | [dbry/lzw-ab](https://github.com/dbry/lzw-ab) | ~800 | pending | LZW compression |
+| 32 | [skeeto/trie](https://github.com/skeeto/trie) | ~500 | pending | Trie data structure |
+| 33 | [B-Con/crypto-algorithms](https://github.com/B-Con/crypto-algorithms) | ~300 | pending | DES/Blowfish/RC4 |
+| 34 | [ooxi/xml.c](https://github.com/ooxi/xml.c) | ~1,000 | pending | XML DOM parser |
+| 35 | [sheredom/utf8.h](https://github.com/sheredom/utf8.h) | ~1,500 | pending | UTF-8 string functions |
+| 36 | [howerj/libforth](https://github.com/howerj/libforth) | ~3,000 | pending | Forth interpreter |
+| 37 | [rain-1/single_cream](https://github.com/rain-1/single_cream) | ~1,600 | pending | Scheme interpreter |
 
-**Score: 20/20 passing (compile+run)**
+**Score: 20/20 passing, 17 pending (compile+run)**
 
 ### 1. c99js -- Self-Compilation (Bootstrapping)
 
