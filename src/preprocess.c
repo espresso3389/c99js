@@ -700,7 +700,7 @@ char *preprocess(const char *src, const char *filename,
         while (*pp.p == ' ' || *pp.p == '\t') pp.p++;
 
         /* Check for # at beginning of line (possibly after whitespace) */
-        if (*pp.p == '#') {
+        if (*pp.p == '#' && !pp.in_block_comment) {
             pp.p++;
             pp_skip_whitespace_inline(&pp);
 
@@ -886,10 +886,30 @@ char *preprocess(const char *src, const char *filename,
 
         /* Skipping */
         if (pp.skip_depth > 0) {
+            /* Skip non-directive content, but track block comment state */
+            while (*pp.p && *pp.p != '\n' && *pp.p != '\r') {
+                if (pp.in_block_comment) {
+                    if (*pp.p == '*' && pp.p[1] == '/') {
+                        pp.p += 2;
+                        pp.in_block_comment = false;
+                    } else {
+                        pp.p++;
+                    }
+                } else {
+                    if (*pp.p == '/' && pp.p[1] == '*') {
+                        pp.p += 2;
+                        pp.in_block_comment = true;
+                    } else if (*pp.p == '/' && pp.p[1] == '/') {
+                        /* line comment - skip rest of line */
+                        while (*pp.p && *pp.p != '\n' && *pp.p != '\r') pp.p++;
+                        break;
+                    } else {
+                        pp.p++;
+                    }
+                }
+            }
             if (*pp.p == '\n' || *pp.p == '\r') {
                 buf_push(&pp.out, pp_advance(&pp));
-            } else {
-                pp.p++;
             }
             continue;
         }
