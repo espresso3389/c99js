@@ -133,7 +133,12 @@ static void register_builtins(SymTab *st, Arena *a) {
     const char *math_fns[] = {
         "sin","cos","tan","asin","acos","atan","atan2",
         "sqrt","pow","fabs","ceil","floor","fmod","log","log10","exp",
-        "ldexp","frexp", NULL
+        "ldexp","frexp","tanh","fmin","fmax","round",
+        /* float variants */
+        "sinf","cosf","tanf","asinf","acosf","atanf","atan2f",
+        "sqrtf","powf","fabsf","ceilf","floorf","fmodf","logf","log10f","expf",
+        "tanhf","fminf","fmaxf","roundf",
+        NULL
     };
     for (int i = 0; math_fns[i]; i++) {
         s = symtab_define(st, math_fns[i], SYM_FUNC, math_ty, loc);
@@ -169,6 +174,10 @@ static void register_builtins(SymTab *st, Arena *a) {
     s = symtab_define(st, "ftell", SYM_FUNC, type_func(a, ty_long), loc); s->sc = SC_EXTERN;
     s = symtab_define(st, "rewind", SYM_FUNC, type_func(a, ty_void), loc); s->sc = SC_EXTERN;
     s = symtab_define(st, "assert", SYM_FUNC, type_func(a, ty_void), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "fflush", SYM_FUNC, type_func(a, ty_int), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "perror", SYM_FUNC, type_func(a, ty_void), loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "sscanf", SYM_FUNC, printf_ty, loc); s->sc = SC_EXTERN;
+    s = symtab_define(st, "signal", SYM_FUNC, type_func(a, type_ptr(a, ty_void)), loc); s->sc = SC_EXTERN;
 
     /* Define FILE as void* for simplicity */
     Type *file_ty = type_ptr(a, ty_void);

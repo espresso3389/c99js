@@ -47,9 +47,8 @@ Symbol *symtab_define(SymTab *st, const char *name, SymKind kind, Type *type, Sr
                     return s;
                 }
             }
-            /* Allow extern redeclaration */
-            if (s->sc == SC_EXTERN) {
-                s->type = type;
+            /* Allow extern redeclaration (either direction) */
+            if (s->sc == SC_EXTERN || (s->kind == SYM_FUNC && kind == SYM_FUNC)) {
                 return s;
             }
             error_at(loc, "redefinition of '%s'", name);

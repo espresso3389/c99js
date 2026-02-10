@@ -882,6 +882,12 @@ class Runtime {
     this.exit(134);
   }
 
+  perror(addr) {
+    const prefix = addr ? this.mem.readString(addr) : '';
+    if (prefix) this._writeStderr(prefix + ': error\n');
+    else this._writeStderr('error\n');
+  }
+
   qsort(baseAddr, numItems, itemSize, compareFn) {
     // Read items into a JS array, sort, write back
     const items = [];
@@ -1170,6 +1176,11 @@ class Runtime {
 
   rewind(filePtr) {
     this.fseek(filePtr, 0, 0);
+  }
+
+  fflush(filePtr) {
+    /* No-op in JS - output is already unbuffered */
+    return 0;
   }
 
   // Convenience accessors for stdin/stdout/stderr pointers

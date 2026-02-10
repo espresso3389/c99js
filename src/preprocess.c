@@ -173,6 +173,23 @@ static const char *pp_read_line(PPState *pp) {
             if (body.len > 0) buf_push(&body, ' ');
             continue;
         }
+        /* Strip C-style block comments */
+        if (pp->p[0] == '/' && pp->p[1] == '*') {
+            pp->p += 2;
+            while (*pp->p && !(pp->p[0] == '*' && pp->p[1] == '/')) {
+                if (*pp->p == '\n' || *pp->p == '\r') pp->line++;
+                pp->p++;
+            }
+            if (*pp->p) pp->p += 2; /* skip close */
+            /* Replace comment with a single space */
+            if (body.len > 0) buf_push(&body, ' ');
+            continue;
+        }
+        /* Strip C++ line comments - rest of line is comment */
+        if (pp->p[0] == '/' && pp->p[1] == '/') {
+            while (*pp->p && *pp->p != '\n' && *pp->p != '\r') pp->p++;
+            break;
+        }
         buf_push(&body, *pp->p++);
     }
     /* Trim trailing whitespace */
@@ -614,6 +631,13 @@ char *preprocess(const char *src, const char *filename,
         /* time.h types */
         define_macro("time_t", "long", false, NULL, false);
         define_macro("clock_t", "long", false, NULL, false);
+
+        /* signal.h types and constants */
+        define_macro("sig_atomic_t", "int", false, NULL, false);
+        define_macro("SIGINT", "2", false, NULL, false);
+        define_macro("SIGTERM", "15", false, NULL, false);
+        define_macro("SIG_DFL", "((void(*)(int))0)", false, NULL, false);
+        define_macro("SIG_IGN", "((void(*)(int))1)", false, NULL, false);
 
         /* BUFSIZ */
         define_macro("BUFSIZ", "8192", false, NULL, false);

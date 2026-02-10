@@ -226,8 +226,8 @@ static bool is_stdlib_func(const char *name) {
         "isalpha","isdigit","isalnum","isspace","isupper","islower",
         "ispunct","isprint","iscntrl","isxdigit","toupper","tolower",
         "fopen","fclose","fread","fwrite","fgets","fputs","feof",
-        "fgetc","fputc","fseek","ftell","rewind",
-        "puts","putchar","getchar","assert",
+        "fgetc","fputc","fseek","ftell","rewind","fflush",
+        "puts","putchar","getchar","assert","perror",
         "clock","time","difftime","localtime","strftime",
         "strdup","strtoll","strtoul","strtoull","vsnprintf","vfprintf",
         "__errno_ptr",
@@ -239,17 +239,34 @@ static bool is_stdlib_func(const char *name) {
     return false;
 }
 
-/* Check if a function should be called through Math.xxx */
-static bool is_math_func(const char *name) {
-    static const char *names[] = {
-        "sin","cos","tan","asin","acos","atan","atan2",
-        "sqrt","pow","fabs","ceil","floor","fmod","log","log10","exp",
-        NULL
+/* Map C math function name to JavaScript Math.xxx name.
+ * Returns the JS name if it's a math function, NULL otherwise. */
+static const char *math_func_js_name(const char *name) {
+    /* Table of {c_name, js_name} pairs */
+    static const struct { const char *c; const char *js; } map[] = {
+        {"sin","sin"},{"cos","cos"},{"tan","tan"},
+        {"asin","asin"},{"acos","acos"},{"atan","atan"},{"atan2","atan2"},
+        {"sqrt","sqrt"},{"pow","pow"},{"fabs","abs"},
+        {"ceil","ceil"},{"floor","floor"},{"fmod","fmod"},
+        {"log","log"},{"log10","log10"},{"exp","exp"},
+        {"tanh","tanh"},{"fmin","min"},{"fmax","max"},{"round","round"},
+        /* float variants -> same JS function */
+        {"sinf","sin"},{"cosf","cos"},{"tanf","tan"},
+        {"asinf","asin"},{"acosf","acos"},{"atanf","atan"},{"atan2f","atan2"},
+        {"sqrtf","sqrt"},{"powf","pow"},{"fabsf","abs"},
+        {"ceilf","ceil"},{"floorf","floor"},{"fmodf","fmod"},
+        {"logf","log"},{"log10f","log10"},{"expf","exp"},
+        {"tanhf","tanh"},{"fminf","min"},{"fmaxf","max"},{"roundf","round"},
+        {NULL, NULL}
     };
-    for (int i = 0; names[i]; i++) {
-        if (strcmp(name, names[i]) == 0) return true;
+    for (int i = 0; map[i].c; i++) {
+        if (strcmp(name, map[i].c) == 0) return map[i].js;
     }
-    return false;
+    return NULL;
+}
+
+static bool is_math_func(const char *name) {
+    return math_func_js_name(name) != NULL;
 }
 
 /* ---- Expression generation ---- */
@@ -554,7 +571,7 @@ static void gen_expr(CodeGen *cg, Node *n) {
         }
 
         if (is_direct && is_math_func(fname)) {
-            emit(cg, "Math.%s(", fname);
+            emit(cg, "Math.%s(", math_func_js_name(fname));
         } else if (is_direct && is_stdlib_func(fname)) {
             emit(cg, "rt.%s(", fname);
         } else if (is_direct) {
