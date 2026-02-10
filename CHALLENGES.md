@@ -41,8 +41,9 @@ Real-world C projects compiled to JavaScript with c99js.
 | 35 | [sheredom/utf8.h](https://github.com/sheredom/utf8.h) | ~1,500 | pending | UTF-8 string functions, preprocessor `#elif` bug fixed |
 | 36 | [howerj/libforth](https://github.com/howerj/libforth) | ~3,000 | **PASS** | 15/15 Forth interpreter tests, goto/va_arg reimplemented |
 | 37 | [rain-1/single_cream](https://github.com/rain-1/single_cream) | ~1,600 | **PASS** | 31/31 Scheme interpreter tests, 25+ goto removals, GC pointer fix |
+| 38 | [whyisitworking/C-Simple-JSON-Parser](https://github.com/whyisitworking/C-Simple-JSON-Parser) | ~? | pending | JSON parser, moved from primitive tests |
 
-**Score: 36/36 passing, 1 pending (compile+run)**
+**Score: 36/36 passing, 2 pending (compile+run)**
 
 ### 1. c99js -- Self-Compilation (Bootstrapping)
 

@@ -3,6 +3,7 @@
 *.pdb
 *.obj
 obj/
+c99js
 
 # Generated JS (compiler output)
 *.js
@@ -11,6 +12,7 @@ obj/
 # Debug/log files
 *.txt
 !test/expected/*.txt
+!challenges/tests/**/expected.txt
 
 # Zig build output
 zig-out/

@@ -39,6 +39,16 @@ jobs:
             bash test/run_tests.sh ./c99js node
           fi
 
+      - name: Run challenge tests
+        shell: bash
+        run: |
+          chmod +x challenges/run_challenge_tests.sh
+          if [ -f c99js.exe ]; then
+            bash challenges/run_challenge_tests.sh ./c99js.exe node
+          else
+            bash challenges/run_challenge_tests.sh ./c99js node
+          fi
+
   self-compile:
     runs-on: ubuntu-latest
 

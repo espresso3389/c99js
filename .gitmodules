@@ -52,3 +52,6 @@
 [submodule "challenges/printf"]
 	path = challenges/printf
 	url = https://github.com/mpaland/printf.git
+[submodule "challenges/C-Simple-JSON-Parser"]
+	path = challenges/C-Simple-JSON-Parser
+	url = https://github.com/whyisitworking/C-Simple-JSON-Parser.git

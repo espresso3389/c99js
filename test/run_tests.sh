@@ -115,7 +115,6 @@ run_test test/test_basic.c           0 "test/expected/test_basic.txt"
 run_test test/test_string.c          0 "test/expected/test_string.txt"
 run_test test/test_struct.c          0 "test/expected/test_struct.txt"
 run_test test/test_funcptr.c         0 "test/expected/test_funcptr.txt"
-run_test test/test_json.c            0 "test/expected/test_json.txt"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $SKIP skipped (total $((PASS + FAIL + SKIP)))"

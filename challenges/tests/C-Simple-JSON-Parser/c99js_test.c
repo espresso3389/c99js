@@ -2,8 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+/*
+ * C-Simple-JSON-Parser (as a challenge project).
+ *
+ * This test was previously part of the primitive test suite as `test/test_json.c`,
+ * but the parser repository is now tracked under `challenges/`.
+ */
+
 #define JSON_SKIP_WHITESPACE
-#include "../C-Simple-JSON-Parser/json.c"
+#include "../../C-Simple-JSON-Parser/json.c"
 
 int main(void) {
     /* Test 1: Simple object */
@@ -59,3 +66,4 @@ int main(void) {
     printf("All tests passed!\n");
     return 0;
 }
+
