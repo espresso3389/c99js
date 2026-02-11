@@ -41,9 +41,9 @@ Real-world C projects compiled to JavaScript with c99js.
 | 35 | [sheredom/utf8.h](https://github.com/sheredom/utf8.h) | ~1,500 | **PASS** | 111/112 tests pass, codegen hex escape fix |
 | 36 | [howerj/libforth](https://github.com/howerj/libforth) | ~3,000 | **PASS** | 15/15 Forth interpreter tests, goto/va_arg reimplemented |
 | 37 | [rain-1/single_cream](https://github.com/rain-1/single_cream) | ~1,600 | **PASS** | 31/31 Scheme interpreter tests, 25+ goto removals, GC pointer fix |
-| 38 | [whyisitworking/C-Simple-JSON-Parser](https://github.com/whyisitworking/C-Simple-JSON-Parser) | ~950 | pending | JSON parser, macro-generated function redefinition errors |
+| 38 | [whyisitworking/C-Simple-JSON-Parser](https://github.com/whyisitworking/C-Simple-JSON-Parser) | ~950 | **PASS** | 5/5 JSON parse/print tests |
 
-**Score: 37/37 passing, 1 pending (compile+run)**
+**Score: 38/38 passing**
 
 ### 1. c99js -- Self-Compilation (Bootstrapping)
 
@@ -609,6 +609,16 @@ The test driver is a full rewrite of `sch3.c` with these adaptations:
 - **`FILE*` ports eliminated** -- replaced with string-based input and buffer-based output
 - **`random()` eliminated** -- replaced with incrementing counter for `gensym`
 - **init.scm and preprocessor.scm embedded** as C string literals (full macro system included)
+
+### 38. whyisitworking/C-Simple-JSON-Parser -- PASS
+
+Macro-heavy JSON parser (~950 lines) using C preprocessor token pasting to generate typed
+containers (`result(json_element)`, `typed(json_element)`, etc.). All 5 tests pass covering
+simple objects, nested objects, arrays, strings, and mixed float/boolean values.
+
+```
+All tests passed!
+```
 
 ## Compiler Fixes Applied
 
