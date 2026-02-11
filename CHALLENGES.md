@@ -38,10 +38,10 @@ Real-world C projects compiled to JavaScript with c99js.
 | 32 | [skeeto/trie](https://github.com/skeeto/trie) | ~500 | **PASS** | 41/41 trie tests, compound literal workaround |
 | 33 | [B-Con/crypto-algorithms](https://github.com/B-Con/crypto-algorithms) | ~300 | **PASS** | 17/17 RC4+DES/3DES+Blowfish tests, flat array rewrites for multi-dim arrays |
 | 34 | [ooxi/xml.c](https://github.com/ooxi/xml.c) | ~1,000 | **PASS** | 48/48 XML DOM tests, goto/va_arg refactored |
-| 35 | [sheredom/utf8.h](https://github.com/sheredom/utf8.h) | ~1,500 | pending | UTF-8 string functions, preprocessor `#elif` bug fixed |
+| 35 | [sheredom/utf8.h](https://github.com/sheredom/utf8.h) | ~1,500 | pending | 92/109 tests pass, multi-byte string literal (`\xNN`) handling issues remain |
 | 36 | [howerj/libforth](https://github.com/howerj/libforth) | ~3,000 | **PASS** | 15/15 Forth interpreter tests, goto/va_arg reimplemented |
 | 37 | [rain-1/single_cream](https://github.com/rain-1/single_cream) | ~1,600 | **PASS** | 31/31 Scheme interpreter tests, 25+ goto removals, GC pointer fix |
-| 38 | [whyisitworking/C-Simple-JSON-Parser](https://github.com/whyisitworking/C-Simple-JSON-Parser) | ~? | pending | JSON parser, moved from primitive tests |
+| 38 | [whyisitworking/C-Simple-JSON-Parser](https://github.com/whyisitworking/C-Simple-JSON-Parser) | ~950 | pending | JSON parser, macro-generated function redefinition errors |
 
 **Score: 36/36 passing, 2 pending (compile+run)**
 
@@ -547,12 +547,17 @@ Required `goto` and `va_arg` refactoring.
 
 ### 35. sheredom/utf8.h -- pending
 
-UTF-8 string library (~1,500 lines). Was blocked by c99js preprocessor bug: multi-branch
-`#elif` chains caused `#else` to incorrectly activate after a matching `#elif`. The
-preprocessor state machine used `skip_depth == 1` ambiguously for both "no branch matched
-yet" and "a branch already matched". Fixed by adding an `if_has_matched` bitmask to
-`PPState` that tracks whether any branch has been taken at each `#if` nesting depth.
-Compile/run testing pending.
+UTF-8 string library (~1,500 lines). Was blocked by two c99js preprocessor bugs, both now
+fixed: (1) multi-branch `#elif` chains caused `#else` to incorrectly activate after a
+matching `#elif` -- fixed by adding `if_has_matched` bitmask; (2) `#` inside `/* */` block
+comments was mistaken for directives when `skip_depth > 0` -- fixed by tracking block
+comment state in the skip path.
+
+Compiles and runs: 92/109 tests pass. All ASCII and single-codepoint tests pass. Failures
+are in multi-byte UTF-8 string literals using hex escapes (`"\xc3\xa9"` for e-acute,
+`"\xe2\x82\xac"` for euro sign) -- the c99js string literal handling does not correctly
+process these escape sequences, causing `utf8len`, `utf8size`, `utf8chr`, `utf8codepoint`,
+and `utf8valid` to return incorrect results on multi-byte input.
 
 ### 36. howerj/libforth -- PASS
 
@@ -622,3 +627,5 @@ The test driver is a full rewrite of `sch3.c` with these adaptations:
 20. Unsigned 32-bit wrap -- emit `>>> 0` after `+`, `-`, `*` on unsigned 32-bit types to prevent overflow past 2^32
 21. Unsigned right shift -- emit `>>>` instead of `>>` for unsigned non-BigInt types (C `>>` is logical for unsigned)
 22. Preprocessor `#elif`/`#else` state machine -- added `if_has_matched` bitmask to distinguish "no branch matched yet" from "a branch already matched" at each `#if` nesting depth
+23. Preprocessor `#` in block comments -- `#` inside `/* */` comments was mistaken for directives when `skip_depth > 0`; fixed by tracking block comment state in the skip path
+24. BigInt/Number mixing in `if_has_matched` -- changed from `uint64_t` + `1ULL` to `unsigned int` + `1U` to avoid BigInt/Number type mixing in self-compiled JS
