@@ -395,7 +395,15 @@ static void gen_expr(CodeGen *cg, Node *n) {
             case '\r': buf_append(&cg->data_section, "\\r", 2); break;
             case '\t': buf_append(&cg->data_section, "\\t", 2); break;
             case '\0': buf_append(&cg->data_section, "\\0", 2); break;
-            default: buf_push(&cg->data_section, c); break;
+            default:
+                if ((unsigned char)c > 0x7e || (unsigned char)c < 0x20) {
+                    char hex[5];
+                    snprintf(hex, sizeof(hex), "\\x%02x", (unsigned char)c);
+                    buf_append(&cg->data_section, hex, 4);
+                } else {
+                    buf_push(&cg->data_section, c);
+                }
+                break;
             }
         }
         buf_append(&cg->data_section, "\");\n", 3);
